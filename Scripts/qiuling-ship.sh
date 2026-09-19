@@ -8,7 +8,7 @@
 #
 # Settings come from the environment, or from Config/qiuling.env (gitignored):
 #   TEAM_ID          the 10-character Apple developer team ID
-#   BUNDLE_PREFIX    reverse-DNS prefix for the bundle IDs, e.g. gp.pranay  (-> gp.pranay.signal)
+#   BUNDLE_PREFIX    reverse-DNS prefix for the bundle IDs, e.g. gp.pranay  (-> gp.pranay.q)
 #   ASC_KEY_ID       App Store Connect API key ID
 #   ASC_ISSUER_ID    App Store Connect API issuer ID
 #   ASC_KEY_PATH     path to the AuthKey_XXXX.p8 file
@@ -32,7 +32,7 @@ AUTH=(-allowProvisioningUpdates -allowProvisioningDeviceRegistration
 ARCHIVE=build/Signal-Qiuling.xcarchive
 rm -rf "$ARCHIVE"
 
-echo "== archiving build $BUILD as $BUNDLE_PREFIX.signal"
+echo "== archiving build $BUILD as $BUNDLE_PREFIX.q"
 xcodebuild archive \
   -workspace Signal.xcworkspace -scheme Signal -configuration "App Store Release" \
   -destination generic/platform=iOS -archivePath "$ARCHIVE" \

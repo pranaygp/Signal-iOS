@@ -1,4 +1,8 @@
-# Signal in Qiuling
+# Q — Signal in Qiuling
+
+The app is called **Q** on the phone and its bundle ID is `<prefix>.q` (the
+extensions are `<prefix>.q.SignalNSE` and `<prefix>.q.shareextension`). It is
+Signal with Qiuling on top, and more of Qiuling will land here over time.
 
 This branch sets message text in Qiuling — bubbles, the compose box and the
 chat-list preview — so a glance at the screen shows the script, not English.

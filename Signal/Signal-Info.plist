@@ -15,7 +15,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>${PRODUCT_NAME}</string>
+	<string>Q</string>
 	<key>CFBundleExecutable</key>
 	<string>${EXECUTABLE_NAME}</string>
 	<key>CFBundleGetInfoString</key>
@@ -40,7 +40,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>$(SIGNAL_BUNDLEID_PREFIX).signal</string>
+			<string>$(SIGNAL_BUNDLEID_PREFIX).q</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>sgnl</string>
