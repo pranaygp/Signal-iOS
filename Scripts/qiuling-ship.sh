@@ -27,7 +27,12 @@ for plist in SignalNSE/Info.plist SignalShareExtension/Info.plist; do
 done
 trap 'git checkout -q -- Signal/Signal-Info.plist SignalNSE/Info.plist SignalShareExtension/Info.plist 2>/dev/null || true' EXIT
 
-AUTH=(-allowProvisioningUpdates -allowProvisioningDeviceRegistration
+# Signing uses the Apple ID signed into Xcode (Xcode > Settings > Accounts):
+# Xcode's provisioning service rejects App Store Connect API keys here with a
+# bare "Authentication failed" (tried Admin and App Manager keys), while the
+# upload step accepts the same key without complaint.
+SIGN_AUTH=(-allowProvisioningUpdates -allowProvisioningDeviceRegistration)
+UPLOAD_AUTH=(-allowProvisioningUpdates
       -authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
 ARCHIVE=build/Signal-Qiuling.xcarchive
 rm -rf "$ARCHIVE"
@@ -36,9 +41,9 @@ echo "== archiving build $BUILD as $BUNDLE_PREFIX.q"
 xcodebuild archive \
   -workspace Signal.xcworkspace -scheme Signal -configuration "App Store Release" \
   -destination generic/platform=iOS -archivePath "$ARCHIVE" \
-  "${AUTH[@]}" \
+  "${SIGN_AUTH[@]}" \
   DEVELOPMENT_TEAM="$TEAM_ID" SIGNAL_BUNDLEID_PREFIX="$BUNDLE_PREFIX" SIGNAL_MERCHANTID="" \
-  CODE_SIGN_STYLE=Automatic CODE_SIGN_IDENTITY="Apple Distribution" PROVISIONING_PROFILE_SPECIFIER="" \
+  CODE_SIGN_STYLE=Automatic PROVISIONING_PROFILE_SPECIFIER="" \
   | tee build/archive.log | grep -E "error:|warning: .*(Qiuling|provision)|\*\* ARCHIVE" || true
 [ -d "$ARCHIVE" ] || { echo "archive failed; see build/archive.log" >&2; exit 1; }
 
@@ -59,6 +64,6 @@ EOF
 
 echo "== uploading to App Store Connect"
 xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportOptionsPlist build/export.plist \
-  -exportPath build/export "${AUTH[@]}" | tee build/export.log | grep -E "error:|Upload succeeded|\*\* EXPORT" || true
+  -exportPath build/export "${UPLOAD_AUTH[@]}" | tee build/export.log | grep -E "error:|Upload succeeded|\*\* EXPORT" || true
 grep -q "EXPORT SUCCEEDED" build/export.log || { echo "upload failed; see build/export.log" >&2; exit 1; }
 echo "build $BUILD uploaded — it appears in TestFlight once Apple finishes processing (usually 5–15 min)"

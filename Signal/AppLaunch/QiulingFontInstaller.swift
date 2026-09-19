@@ -6,6 +6,7 @@
 import CoreText
 import CryptoKit
 import SignalServiceKit
+import SignalUI
 import UIKit
 
 /// Makes the bundled Qiuling font available to every app on the phone, not

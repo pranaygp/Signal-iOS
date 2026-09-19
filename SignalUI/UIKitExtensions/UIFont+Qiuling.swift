@@ -41,8 +41,8 @@ public extension UIFont {
         // depends on them, so ask for them explicitly rather than trust the default.
         let descriptor = face.fontDescriptor.addingAttributes([
             .featureSettings: [[
-                UIFontDescriptor.FeatureKey.typeIdentifier: kLigaturesType,
-                UIFontDescriptor.FeatureKey.selectorIdentifier: kCommonLigaturesOnSelector,
+                UIFontDescriptor.FeatureKey.featureIdentifier: kLigaturesType,
+                UIFontDescriptor.FeatureKey.typeIdentifier: kCommonLigaturesOnSelector,
             ]],
         ])
         let ligated = UIFont(descriptor: descriptor, size: 0)
