@@ -6,7 +6,29 @@ Everything else in the app is unchanged. The change is one Swift file,
 `SignalUI/UIKitExtensions/UIFont+Qiuling.swift`, five one-line call-site
 edits, and the font in `SignalUI/Fonts`.
 
-## Build
+## The font, phone-wide
+
+On first launch (three seconds after the chat list appears) the app asks to
+install its bundled Qiuling for the whole phone — Apple's font-provider
+mechanism, so it lands under Settings › General › Fonts and every app with a
+font menu can use it. When a new build ships a changed font file the old
+registration is replaced silently. `QiulingFontInstaller.swift` is the whole
+of it; the `com.apple.developer.user-fonts` entitlement is what allows it.
+
+## Ship to TestFlight
+
+`Scripts/qiuling-ship.sh` archives and uploads with no Xcode UI, authenticated
+by an App Store Connect API key; its header lists the five settings it needs
+in `Config/qiuling.env`. From the qiuling repo, `tools/ship_signal.sh`
+rebuilds the font, copies it here, commits, and runs it. On the phone,
+TestFlight's automatic updates keep the app — and so the font — current.
+
+Entitlements are trimmed to what a personal team can sign (app groups,
+keychain, hardened process, fonts); push, Apple Pay, associated domains,
+iCloud, data protection and the carrier/Wi-Fi entitlements are gone, per
+Signal's own BUILDING.md.
+
+## Build by hand
 
 Needs a Mac with Xcode and an Apple developer account.
 

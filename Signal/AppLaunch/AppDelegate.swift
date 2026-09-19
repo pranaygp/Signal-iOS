@@ -153,6 +153,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
         BenchEventStart(title: "Presenting HomeView", eventId: "AppStart", logInProduction: true)
         appReadiness.runNowOrWhenUIDidBecomeReadySync { BenchEventComplete(eventId: "AppStart") }
+        // A beat after the home screen, so the one-time font prompt does not
+        // land on top of registration or the notification permission sheet.
+        appReadiness.runNowOrWhenUIDidBecomeReadySync {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { QiulingFontInstaller.installIfNeeded() }
+        }
 
         MessageFetchBGRefreshTask.register(appReadiness: appReadiness)
 

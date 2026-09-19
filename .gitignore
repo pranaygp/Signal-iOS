@@ -43,3 +43,4 @@ debuglogs/
 /.vscode
 
 fastlane/Preview.html
+Config/qiuling.env
