@@ -130,7 +130,7 @@ class ChatListCell: UITableViewCell, ReusableTableViewCell {
     }
 
     private static var snippetFont: UIFont {
-        .dynamicTypeSubheadlineClamped
+        .qiulingSubheadlineClamped
     }
 
     private static var snippetColor: UIColor {

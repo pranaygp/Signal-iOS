@@ -1574,6 +1574,7 @@
 		76847C942A13416A008E2EAB /* ChatListViewController+Camera.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76847C932A13416A008E2EAB /* ChatListViewController+Camera.swift */; };
 		76847C962A1346A8008E2EAB /* BlockListViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76847C952A1346A8008E2EAB /* BlockListViewController.swift */; };
 		7685DFFF29EA1F6400542CBC /* UIFont+OWS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7685DFFE29EA1F6400542CBC /* UIFont+OWS.swift */; };
+		Q1UL1NG00000000000005B1D /* UIFont+Qiuling.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL1NG00000000000005W1F /* UIFont+Qiuling.swift */; };
 		76896BF828415ABA00F6C8D2 /* VideoAttachmentPrepViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76896BF728415ABA00F6C8D2 /* VideoAttachmentPrepViewController.swift */; };
 		76896BFA28415B6B00F6C8D2 /* VideoTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76896BF928415B6B00F6C8D2 /* VideoTimelineView.swift */; };
 		76896BFC2841A84D00F6C8D2 /* ImageAttachmentPrepViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76896BFB2841A84D00F6C8D2 /* ImageAttachmentPrepViewController.swift */; };
@@ -1668,6 +1669,7 @@
 		8852572C27DD40870032073C /* HomeTabBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8852572B27DD40870032073C /* HomeTabBarController.swift */; };
 		8852759527E1BA55003F2F9B /* EBGaramond-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 8852759427E1BA55003F2F9B /* EBGaramond-Regular.ttf */; };
 		8852759627E1BA5B003F2F9B /* Parisienne-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 8852758E27E1B9C5003F2F9B /* Parisienne-Regular.ttf */; };
+		Q1UL1NG0000000000000B1LD /* QiulingOneFiveWrite-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = Q1UL1NG0000000000000F0N7 /* QiulingOneFiveWrite-Regular.ttf */; };
 		8852759727E1BA64003F2F9B /* Inter-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 8852758B27E1B7F4003F2F9B /* Inter-Variable.ttf */; };
 		8852759927E1BA7D003F2F9B /* BarlowCondensed-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 8852759827E1BA7D003F2F9B /* BarlowCondensed-Medium.ttf */; };
 		8852759A27E1BA93003F2F9B /* fontawesome-webfont.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 34330A591E7875FB00DF2FB9 /* fontawesome-webfont.ttf */; };
@@ -5872,6 +5874,7 @@
 		76847C932A13416A008E2EAB /* ChatListViewController+Camera.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatListViewController+Camera.swift"; sourceTree = "<group>"; };
 		76847C952A1346A8008E2EAB /* BlockListViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockListViewController.swift; sourceTree = "<group>"; };
 		7685DFFE29EA1F6400542CBC /* UIFont+OWS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UIFont+OWS.swift"; sourceTree = "<group>"; };
+		Q1UL1NG00000000000005W1F /* UIFont+Qiuling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UIFont+Qiuling.swift"; sourceTree = "<group>"; };
 		76896BF728415ABA00F6C8D2 /* VideoAttachmentPrepViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoAttachmentPrepViewController.swift; sourceTree = "<group>"; };
 		76896BF928415B6B00F6C8D2 /* VideoTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoTimelineView.swift; sourceTree = "<group>"; };
 		76896BFB2841A84D00F6C8D2 /* ImageAttachmentPrepViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageAttachmentPrepViewController.swift; sourceTree = "<group>"; };
@@ -5975,6 +5978,7 @@
 		8852572B27DD40870032073C /* HomeTabBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeTabBarController.swift; sourceTree = "<group>"; };
 		8852758B27E1B7F4003F2F9B /* Inter-Variable.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Inter-Variable.ttf"; sourceTree = "<group>"; };
 		8852758E27E1B9C5003F2F9B /* Parisienne-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Parisienne-Regular.ttf"; sourceTree = "<group>"; };
+		Q1UL1NG0000000000000F0N7 /* QiulingOneFiveWrite-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "QiulingOneFiveWrite-Regular.ttf"; sourceTree = "<group>"; };
 		8852759427E1BA55003F2F9B /* EBGaramond-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "EBGaramond-Regular.ttf"; sourceTree = "<group>"; };
 		8852759827E1BA7D003F2F9B /* BarlowCondensed-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "BarlowCondensed-Medium.ttf"; sourceTree = "<group>"; };
 		885275BF27E26775003F2F9B /* TextAttachmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextAttachmentView.swift; sourceTree = "<group>"; };
@@ -9023,6 +9027,7 @@
 				B9A87A372A9E34BD009FCA13 /* Hatsuishi-UPM800.otf */,
 				8852758B27E1B7F4003F2F9B /* Inter-Variable.ttf */,
 				8852758E27E1B9C5003F2F9B /* Parisienne-Regular.ttf */,
+				Q1UL1NG0000000000000F0N7 /* QiulingOneFiveWrite-Regular.ttf */,
 				B982ACFE2BA8FD2A00AD7E81 /* SignalSymbols-Bold.otf */,
 				B982AD002BA8FD3100AD7E81 /* SignalSymbols-Light.otf */,
 				B96D6D782B9F83270039EB99 /* SignalSymbols-Regular.otf */,
@@ -9317,6 +9322,7 @@
 				05412B3E2C29C0A0007AC9C7 /* UIButton+DeprecationWorkaround.m */,
 				F963F815292D1B5B007DBBBD /* UIButton+SignalUI.swift */,
 				7685DFFE29EA1F6400542CBC /* UIFont+OWS.swift */,
+				Q1UL1NG00000000000005W1F /* UIFont+Qiuling.swift */,
 				76E54D68290B4E7800D03BA8 /* UIFont+TextStyle.swift */,
 				7609819329382EFF008F8300 /* UIGeometry+Signal.swift */,
 				768FC7B52F32A0AB00707F72 /* UIImage+Blur.swift */,
@@ -16451,6 +16457,7 @@
 				B9A87A382A9E34BD009FCA13 /* Hatsuishi-UPM800.otf in Resources */,
 				8852759727E1BA64003F2F9B /* Inter-Variable.ttf in Resources */,
 				8852759627E1BA5B003F2F9B /* Parisienne-Regular.ttf in Resources */,
+				Q1UL1NG0000000000000B1LD /* QiulingOneFiveWrite-Regular.ttf in Resources */,
 				B982ACFF2BA8FD2A00AD7E81 /* SignalSymbols-Bold.otf in Resources */,
 				B982AD012BA8FD3200AD7E81 /* SignalSymbols-Light.otf in Resources */,
 				B96D6D792B9F83270039EB99 /* SignalSymbols-Regular.otf in Resources */,
@@ -18367,6 +18374,7 @@
 				F963F816292D1B5B007DBBBD /* UIButton+SignalUI.swift in Sources */,
 				B9F9ABF72CB98844001AE92D /* UIColor+Signal.swift in Sources */,
 				7685DFFF29EA1F6400542CBC /* UIFont+OWS.swift in Sources */,
+				Q1UL1NG00000000000005B1D /* UIFont+Qiuling.swift in Sources */,
 				76E54D69290B4E7800D03BA8 /* UIFont+TextStyle.swift in Sources */,
 				7609819429382EFF008F8300 /* UIGeometry+Signal.swift in Sources */,
 				768FC7B62F32A0B000707F72 /* UIImage+Blur.swift in Sources */,

@@ -428,7 +428,7 @@ public class ConversationInputToolbar: UIView, QuotedReplyPreviewDelegate {
     private lazy var inputTextView: ConversationInputTextView = {
         let inputTextView = ConversationInputTextView()
         inputTextView.textViewToolbarDelegate = self
-        inputTextView.font = .dynamicTypeBody
+        inputTextView.font = .qiulingBody
         inputTextView.textColor = Style.primaryTextColor
         inputTextView.placeholderTextColor = Style.secondaryTextColor
         inputTextView.semanticContentAttribute = .forceLeftToRight
@@ -1668,7 +1668,7 @@ public class ConversationInputToolbar: UIView, QuotedReplyPreviewDelegate {
     private var contentSizeChangeNotificationObserver: NotificationCenter.Observer?
 
     private func updateTextViewFontSize() {
-        inputTextView.font = .dynamicTypeBody
+        inputTextView.font = .qiulingBody
         updateHeightWithTextView(inputTextView)
     }
 

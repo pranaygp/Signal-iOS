@@ -143,7 +143,7 @@ public struct ConversationStyle {
             fullWidthGutterTrailing = thread.isGroupThread ? 12 : 16
         }
 
-        let messageTextFont = UIFont.dynamicTypeBody
+        let messageTextFont = UIFont.qiulingBody
 
         dynamicBodyTypePointSize = messageTextFont.pointSize
 

@@ -67,7 +67,7 @@ class ConversationInputTextView: BodyRangesTextView {
         addSubview(placeholderView)
 
         // We need to do these steps _after_ placeholderView is configured.
-        font = .dynamicTypeBody
+        font = .qiulingBody
         textColor = UIColor.Signal.label
         textAlignment = .natural
         textContainer.lineFragmentPadding = 0

@@ -371,7 +371,7 @@ public class CVComponentBodyText: CVComponentBase, CVComponent {
             }
         }
 
-        return UIFont.dynamicTypeBody
+        return UIFont.qiulingBody
     }
 
     private var bodyTextColor: UIColor {
