@@ -48,6 +48,14 @@ something of your own, then on Capabilities turn off Push Notifications,
 Apple Pay, Communication Notifications and Data Protection (keep Background
 Modes and App Groups). Build and run on the phone.
 
+## Xcode version
+
+Build with **Xcode 26**, not 27. Signal has not adopted the UIScene lifecycle,
+and iOS 27 kills at launch any app linked against the iOS 27 SDK that hasn't
+(`UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption`). Linked
+against iOS 26 it runs fine on iOS 27. `Scripts/qiuling-ship.sh` pins this via
+`DEVELOPER_DIR`; lift the pin once upstream Signal adopts scenes.
+
 ## What to expect
 
 - **No push notifications.** Signal's server pushes to Signal's bundle ID, not

@@ -17,7 +17,15 @@ cd "$(dirname "$0")/.."
 
 [ -f Config/qiuling.env ] && source Config/qiuling.env
 : "${TEAM_ID:?}" "${BUNDLE_PREFIX:?}" "${ASC_KEY_ID:?}" "${ASC_ISSUER_ID:?}" "${ASC_KEY_PATH:?}"
-case "$(xcode-select -p)" in */Xcode*.app/*) ;; *) echo "select Xcode first: sudo xcode-select -s /Applications/Xcode.app" >&2; exit 1;; esac
+# Build with the iOS 26 SDK. Signal has not adopted the UIScene lifecycle, and
+# iOS 27 terminates any app linked against the iOS 27 SDK that has not
+# (the crash is in UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption).
+# Apps linked against iOS 26 run on iOS 27 unaffected, so pin the toolchain
+# until upstream Signal adopts scenes. `xcodes install 26.6` provides it.
+XCODE26=${XCODE26:-$(ls -d /Applications/Xcode-26.*.app 2>/dev/null | sort -V | tail -1)}
+[ -n "$XCODE26" ] || { echo "no Xcode 26 found; run: xcodes install 26.6" >&2; exit 1; }
+export DEVELOPER_DIR="$XCODE26/Contents/Developer"
+echo "== using $(xcodebuild -version | tr '\n' ' ')"
 
 # TestFlight needs a build number that only ever goes up; the minute is plenty.
 BUILD=$(date -u +%Y%m%d%H%M)
