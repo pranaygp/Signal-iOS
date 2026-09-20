@@ -14,13 +14,12 @@ import SwiftUI
 @available(iOS 16, *)
 @MainActor
 final class RaceModel: ObservableObject {
-    enum Source: String, CaseIterable { case sentences, words, own
-        var label: String { switch self { case .sentences: "sentences"; case .words: "words"; case .own: "your text" } }
+    enum Source: String, CaseIterable { case sentences, words
+        var label: String { switch self { case .sentences: "sentences"; case .words: "words" } }
     }
 
     @AppStorage("Practice.source") var sourceRaw = Source.sentences.rawValue
     @AppStorage("Practice.seconds") var seconds = 30
-    @AppStorage("Practice.ownText") var ownText = ""
     var source: Source { get { Source(rawValue: sourceRaw) ?? .sentences } set { sourceRaw = newValue.rawValue } }
 
     @Published private(set) var race: Race?
@@ -33,13 +32,15 @@ final class RaceModel: ObservableObject {
     @Published private(set) var generation = 0
     private var lastInput = ""
     private var ticker: Timer?
-    private var ownLines: [String] = []
-    private var ownIndex = 0
 
     /// True while keys are landing: the chrome dims.
     var isTyping: Bool { focused && race?.startedAt != nil && !finished }
 
     init() {
+        // Earlier builds offered a "your text" source; a saved choice of it
+        // falls back to sentences, and the text it kept is let go.
+        if Source(rawValue: sourceRaw) == nil { sourceRaw = Source.sentences.rawValue }
+        UserDefaults.standard.removeObject(forKey: "Practice.ownText")
         Task { await PracticeCorpus.shared.loadIfNeeded(); corpusReady = true; if race == nil { start() } }
         NotificationCenter.default.addObserver(forName: QiulingFonts.fontDidChange, object: nil, queue: .main) { [weak self] _ in
             QiulingSegmenter.clearCache(); self?.start()
@@ -50,10 +51,6 @@ final class RaceModel: ObservableObject {
         switch source {
         case .sentences: return PracticeCorpus.shared.nextSentence()
         case .words: return PracticeCorpus.shared.nextWordLine()
-        case .own:
-            guard !ownLines.isEmpty else { return PracticeCorpus.shared.nextSentence() }
-            defer { ownIndex = (ownIndex + 1) % ownLines.count }
-            return ownLines[ownIndex]
         }
     }
 
@@ -61,11 +58,6 @@ final class RaceModel: ObservableObject {
         ticker?.invalidate()
         finished = false
         input = ""; lastInput = ""
-        if source == .own {
-            let words = QiulingSegmenter.normalise(ownText).split(separator: " ").map(String.init)
-            ownLines = stride(from: 0, to: words.count, by: 8).map { words[$0..<min($0 + 8, words.count)].joined(separator: " ") }.filter { !$0.isEmpty }
-            ownIndex = 0
-        }
         race = Race(seconds: TimeInterval(seconds), next: nextLine)
         remaining = TimeInterval(seconds)
     }
@@ -157,9 +149,6 @@ struct TypeView: View {
                 ForEach([15, 30, 60, 120], id: \.self) { Text("\($0)s").tag($0) }
             }
             .pickerStyle(.segmented)
-            if model.source == .own {
-                OwnTextEditor(model: model)
-            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
@@ -288,22 +277,6 @@ struct PassageView: View {
         }
         return Text(out).font(.system(size: 14, weight: .semibold, design: .monospaced)).kerning(0.8)
             .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-// MARK: - Your text
-
-@available(iOS 16, *)
-struct OwnTextEditor: View {
-    @ObservedObject var model: RaceModel
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            PracticeEditor(text: $model.ownText, minHeight: 88)
-            HStack {
-                Button("Race this text", systemImage: "flag.checkered") { model.start() }.practicePrimaryButton()
-                Text("folded to a–z and spaces").font(.system(size: 11, design: .monospaced)).foregroundStyle(PracticeTheme.faint)
-            }
-        }
     }
 }
 

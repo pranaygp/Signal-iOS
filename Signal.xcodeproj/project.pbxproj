@@ -3641,6 +3641,7 @@
 		Q1ULCC7F8186CAA2120DDCA1 /* PracticeTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL811FC51717627B26E21A /* PracticeTheme.swift */; };
 		Q1UL4CF3047944ED02E56885 /* TypeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL6777A5A76F08EF2D89A2 /* TypeView.swift */; };
 		Q1UL2F64EF682136D0E39F8C /* PracticeSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1ULDD6C667CD92EC80FDD30 /* PracticeSections.swift */; };
+		Q1UL7A3E2C91D4F5B6A80C13 /* RecallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL9D1B4E7F2A3C5D6E8F04 /* RecallView.swift */; };
 		Q1UL4BE60C42328D3D854A55 /* PracticeHostViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1ULC6A83494FED126454217 /* PracticeHostViewController.swift */; };
 		Q1ULFA681431930F8903B726 /* corpus.txt in Resources */ = {isa = PBXBuildFile; fileRef = Q1UL79F020040BCD1F8C478C /* corpus.txt */; };
 		Q1ULC1D9CDFB6A7779B41115 /* blocks.json in Resources */ = {isa = PBXBuildFile; fileRef = Q1ULE7DCD9B9359ACF0BC93D /* blocks.json */; };
@@ -8059,6 +8060,7 @@
 		Q1UL811FC51717627B26E21A /* PracticeTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeTheme.swift; sourceTree = "<group>"; };
 		Q1UL6777A5A76F08EF2D89A2 /* TypeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypeView.swift; sourceTree = "<group>"; };
 		Q1ULDD6C667CD92EC80FDD30 /* PracticeSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeSections.swift; sourceTree = "<group>"; };
+		Q1UL9D1B4E7F2A3C5D6E8F04 /* RecallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecallView.swift; sourceTree = "<group>"; };
 		Q1ULC6A83494FED126454217 /* PracticeHostViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeHostViewController.swift; sourceTree = "<group>"; };
 		Q1UL79F020040BCD1F8C478C /* corpus.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = corpus.txt; sourceTree = "<group>"; };
 		Q1ULE7DCD9B9359ACF0BC93D /* blocks.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = blocks.json; sourceTree = "<group>"; };
@@ -16063,6 +16065,7 @@
 				Q1UL811FC51717627B26E21A /* PracticeTheme.swift */,
 				Q1UL6777A5A76F08EF2D89A2 /* TypeView.swift */,
 				Q1ULDD6C667CD92EC80FDD30 /* PracticeSections.swift */,
+				Q1UL9D1B4E7F2A3C5D6E8F04 /* RecallView.swift */,
 				Q1ULC6A83494FED126454217 /* PracticeHostViewController.swift */,
 				Q1UL438BEEC6FA6F6A466C33 /* Resources */,
 			);
@@ -18506,6 +18509,7 @@
 				Q1ULCC7F8186CAA2120DDCA1 /* PracticeTheme.swift in Sources */,
 				Q1UL4CF3047944ED02E56885 /* TypeView.swift in Sources */,
 				Q1UL2F64EF682136D0E39F8C /* PracticeSections.swift in Sources */,
+				Q1UL7A3E2C91D4F5B6A80C13 /* RecallView.swift in Sources */,
 				Q1UL4BE60C42328D3D854A55 /* PracticeHostViewController.swift in Sources */,
 				8827004E23208A1900F01C46 /* AppearanceSettingsTableViewController.swift in Sources */,
 				34D99CE4217509C2000AFB39 /* AppEnvironment.swift in Sources */,

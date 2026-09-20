@@ -342,6 +342,88 @@ final class Race {
     }
 }
 
+// MARK: - Recall drill
+
+/// The flash-card side of the trainer: every drawn block is an item, asked in
+/// both directions, scheduled by Leitner box so the marks you keep missing
+/// come round more often than the ones you have down. Shared with the web
+/// trainer's `stats.js` rule for rule.
+enum Recall {
+    enum Direction: String, Codable, CaseIterable {
+        case read, write
+        var caption: String { self == .read ? "what does this say?" : "which mark is this?" }
+    }
+    enum Mode: String, CaseIterable {
+        case both, read, write
+        var direction: Direction? { switch self { case .both: nil; case .read: .read; case .write: .write } }
+    }
+    enum Label: Int, Comparable {
+        case struggling, learning, mastered, new
+        static func < (a: Label, b: Label) -> Bool { a.rawValue < b.rawValue }
+        var name: String { switch self { case .new: "new"; case .struggling: "struggling"; case .learning: "learning"; case .mastered: "mastered" } }
+    }
+
+    /// Three wrong answers that look like the right one: same length and one
+    /// letter different where the alphabet allows, then same length, then
+    /// anything. The choice should be between look-alikes, not mark and noise.
+    static func decoys(for answer: String, in blocks: [String]) -> [String] {
+        let a = Array(answer)
+        let sameLength = blocks.filter { $0 != answer && $0.count == answer.count }
+        var out = [String]()
+        var pool = sameLength.filter { zip(Array($0), a).filter { $0 != $1 }.count == 1 }.shuffled()
+        out.append(contentsOf: pool.prefix(3))
+        if out.count < 3 {
+            pool = sameLength.filter { !out.contains($0) }.shuffled()
+            out.append(contentsOf: pool.prefix(3 - out.count))
+        }
+        if out.count < 3 {
+            pool = blocks.filter { $0 != answer && !out.contains($0) }.shuffled()
+            out.append(contentsOf: pool.prefix(3 - out.count))
+        }
+        return out
+    }
+
+    private static let boxWeight: [Double] = [8, 5, 3, 2, 1, 0.5]
+
+    /// How keen the drill is to show one card. Unseen items sit near the top
+    /// so everything gets introduced; a slow-but-right item is nudged up.
+    static func weight(_ r: PracticeStore.RecallRecord) -> Double {
+        var w = r.seen == 0 ? 6 : boxWeight[min(5, max(0, r.box))]
+        if let ms = r.msMean, ms > 2500 { w *= 1.5 }
+        return w
+    }
+
+    /// The next card, sampled in proportion to weight over every (mark,
+    /// direction) the mode allows. The last three marks are held out so a
+    /// mark never comes straight back, unless the alphabet is too small for that.
+    static func pick(blocks: [String], mode: Mode, book: PracticeStore.Book, recent: [String]) -> (mark: String, direction: Direction)? {
+        guard !blocks.isEmpty else { return nil }
+        let directions = mode.direction.map { [$0] } ?? Direction.allCases
+        let holdOut = blocks.count >= 4 ? Set(recent.suffix(3)) : []
+        var candidates = [(String, Direction, Double)]()
+        for b in blocks where !holdOut.contains(b) {
+            for d in directions { candidates.append((b, d, weight(book.recall[b]?[d] ?? .init()))) }
+        }
+        let total = candidates.reduce(0) { $0 + $1.2 }
+        guard total > 0 else { return nil }
+        var r = Double.random(in: 0..<total)
+        for (b, d, w) in candidates { r -= w; if r < 0 { return (b, d) } }
+        let last = candidates.last!
+        return (last.0, last.1)
+    }
+
+    /// Where a mark stands, judged by its weaker direction.
+    static func label(_ item: PracticeStore.RecallItem?) -> Label {
+        guard let item, item.read.seen > 0 || item.write.seen > 0 else { return .new }
+        func one(_ r: PracticeStore.RecallRecord) -> Label {
+            if r.box >= 5 { return .mastered }
+            if r.box == 0, r.seen >= 2 { return .struggling }
+            return .learning
+        }
+        return min(one(item.read), one(item.write))
+    }
+}
+
 // MARK: - Stats between sittings
 
 /// What the trainer remembers: one row per race, and per mark how often it
@@ -367,9 +449,43 @@ final class PracticeStore: ObservableObject {
         var decodeN = 0
         var meanDecodeMs: Int? { decodeN > 0 ? Int(decodeSum / Double(decodeN) * 1000) : nil }
     }
+    /// One direction of the recall drill for one mark: a Leitner box and the
+    /// running numbers behind it. Mirrors the web trainer's record field for
+    /// field so the two can be compared, or one day merged.
+    struct RecallRecord: Codable {
+        var box = 0
+        var seen = 0
+        var right = 0
+        var streak = 0
+        var msMean: Double?
+        var last: Double?
+        var confusions: [String: Int] = [:]
+
+        var accuracy: Int? { seen > 0 ? Int((Double(right) / Double(seen) * 100).rounded()) : nil }
+        var topConfusion: String? { confusions.max { $0.value < $1.value || ($0.value == $1.value && $0.key > $1.key) }?.key }
+    }
+    struct RecallItem: Codable {
+        var read = RecallRecord()
+        var write = RecallRecord()
+        subscript(_ d: Recall.Direction) -> RecallRecord {
+            get { d == .read ? read : write }
+            set { if d == .read { read = newValue } else { write = newValue } }
+        }
+    }
     struct Book: Codable {
         var sessions: [Session] = []
         var marks: [String: MarkRecord] = [:]
+        var recall: [String: RecallItem] = [:]
+
+        init() {}
+
+        // Files written before the drill existed have no `recall` key.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            sessions = try c.decodeIfPresent([Session].self, forKey: .sessions) ?? []
+            marks = try c.decodeIfPresent([String: MarkRecord].self, forKey: .marks) ?? [:]
+            recall = try c.decodeIfPresent([String: RecallItem].self, forKey: .recall) ?? [:]
+        }
     }
 
     @Published private(set) var book = Book()
@@ -405,6 +521,29 @@ final class PracticeStore: ObservableObject {
     }
 
     func reset() { book = Book(); save() }
+
+    func recall(_ mark: String, _ d: Recall.Direction) -> RecallRecord { book.recall[mark]?[d] ?? RecallRecord() }
+
+    /// One answered card. A right answer climbs one box; a wrong one falls
+    /// two, so a mark you thought you knew comes back soon. The response time
+    /// is folded into a moving mean, clamped so a wander away from the phone
+    /// does not count as a slow read.
+    func recallAnswer(mark: String, direction d: Recall.Direction, picked: String, ms: Double) {
+        var item = book.recall[mark] ?? RecallItem()
+        var r = item[d]
+        let clamped = min(8000, max(0, ms))
+        r.msMean = r.msMean.map { $0 * 0.7 + clamped * 0.3 } ?? clamped
+        r.last = Date().timeIntervalSince1970 * 1000
+        r.seen += 1
+        if picked == mark {
+            r.right += 1; r.streak += 1; r.box = min(5, r.box + 1)
+        } else {
+            r.streak = 0; r.box = max(0, r.box - 2); r.confusions[picked, default: 0] += 1
+        }
+        item[d] = r
+        book.recall[mark] = item
+        save()
+    }
 
     var best: Int { book.sessions.map(\.wpm).max() ?? 0 }
 

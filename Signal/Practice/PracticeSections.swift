@@ -8,104 +8,6 @@ import SignalUI
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - Recall
-
-/// The other direction: a mark, four spellings, one right. Decoys are one
-/// letter away from the answer, so the choice is between marks that look
-/// alike, not between the mark and noise.
-@available(iOS 16, *)
-@MainActor
-final class RecallModel: ObservableObject {
-    struct Round { let answer: String; let options: [String]; var picked: String? }
-    @Published var round: Round?
-    @Published var seen = 0
-    @Published var hit = 0
-    private var pool: [String] { QiulingFonts.shared.blocks.filter { $0.count >= 2 } }
-
-    func next() {
-        let pool = self.pool
-        guard let answer = pool.randomElement() else { round = nil; return }
-        let a = Array(answer)
-        var near = pool.filter { $0.count == answer.count && $0 != answer && zip(Array($0), a).filter { $0 != $1 }.count == 1 }
-        var decoys = [String]()
-        while decoys.count < 3, !near.isEmpty { decoys.append(near.remove(at: Int.random(in: 0..<near.count))) }
-        while decoys.count < 3, let d = pool.randomElement(), pool.count > 3 { if d != answer, !decoys.contains(d) { decoys.append(d) } }
-        round = Round(answer: answer, options: ([answer] + decoys).shuffled(), picked: nil)
-    }
-
-    func pick(_ option: String) {
-        guard var r = round, r.picked == nil else { return }
-        r.picked = option; round = r
-        seen += 1; if option == r.answer { hit += 1 }
-        let right = option == r.answer
-        Task { try? await Task.sleep(nanoseconds: UInt64((right ? 0.42 : 1.1) * 1e9)); self.next() }
-    }
-}
-
-@available(iOS 16, *)
-struct RecallView: View {
-    @StateObject private var model = RecallModel()
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Which mark is this? Decoys are one letter away from the answer.")
-                    .font(.footnote).foregroundStyle(PracticeTheme.muted).padding(.horizontal, 20).padding(.top, 8)
-                if let r = model.round {
-                    Text(r.answer)
-                        .font(PracticeTheme.script(96))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 28)
-                        .practiceCard()
-                        .padding(.horizontal, 16)
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                        ForEach(r.options, id: \.self) { o in
-                            Button { model.pick(o) } label: {
-                                Text(o)
-                                    .font(.system(size: 22, weight: .semibold, design: .monospaced)).kerning(2)
-                                    .frame(maxWidth: .infinity).padding(.vertical, 14)
-                            }
-                            .optionButton(tint: optionTint(o, r))
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .animation(.snappy, value: r.picked)
-                    HStack {
-                        Text("\(model.hit) / \(model.seen)").font(PracticeTheme.mono).foregroundStyle(PracticeTheme.muted)
-                        Spacer()
-                        Button("Skip", systemImage: "forward") { model.next() }.practiceSecondaryButton()
-                    }
-                    .padding(.horizontal, 20)
-                } else {
-                    Text("This alphabet has no ligatures to tell apart.").font(.footnote).foregroundStyle(PracticeTheme.muted).padding(.horizontal, 20)
-                }
-            }
-        }
-        .onAppear { if model.round == nil { model.next() } }
-    }
-
-    /// Neutral until an answer lands; then the answer goes green and a wrong pick red.
-    private func optionTint(_ o: String, _ r: RecallModel.Round) -> Color? {
-        guard let picked = r.picked else { return nil }
-        if o == r.answer { return PracticeTheme.good }
-        if o == picked { return PracticeTheme.accent }
-        return nil
-    }
-}
-
-@available(iOS 16, *)
-private extension View {
-    /// An answer card: a system bordered button (glass on iOS 26), tinted by result.
-    @ViewBuilder
-    func optionButton(tint: Color?) -> some View {
-        if #available(iOS 26, *) {
-            if let tint { self.buttonStyle(.glassProminent).tint(tint) } else { self.buttonStyle(.glass).tint(PracticeTheme.ink) }
-        } else {
-            if let tint { self.buttonStyle(.borderedProminent).tint(tint) } else { self.buttonStyle(.bordered).tint(PracticeTheme.ink) }
-        }
-    }
-}
-
 // MARK: - Write
 
 /// Type English, see it in the script, send it as a picture: the messaging
@@ -237,13 +139,18 @@ struct ProgressTabView: View {
                         }
                         .padding(18).practiceCard().padding(.horizontal, 16)
                     }
+                }
 
+                RecallProgressSection(book: store.book)
+
+                if !sessions.isEmpty || !store.book.recall.isEmpty {
                     Button("Reset this alphabet", systemImage: "trash", role: .destructive) { confirmReset = true }.practiceSecondaryButton().padding(.horizontal, 20)
-                        .confirmationDialog("Forget every run and mark for \(QiulingFonts.buildId)?", isPresented: $confirmReset, titleVisibility: .visible) {
+                        .confirmationDialog("Forget every run, mark and recall box for \(QiulingFonts.buildId)?", isPresented: $confirmReset, titleVisibility: .visible) {
                             Button("Reset", role: .destructive) { store.reset() }
                         }
                 }
             }
+            .padding(.bottom, 24)
         }
     }
 
