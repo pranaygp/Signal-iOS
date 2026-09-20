@@ -351,8 +351,13 @@ class ProvisioningController: NSObject {
 
         let progressViewModel = LinkAndSyncSecondaryProgressViewModel()
 
+        // Linking from Signal on this same phone: the primary is in front
+        // while it uploads the history archive, so this app is in the
+        // background for that whole stretch and must not be suspended.
+        BackgroundKeepAlive.shared.hold(reason: "linking", seconds: 30 * 60)
         performCoordinatorTaskWithModal(
             task: Task {
+                defer { Task { @MainActor in BackgroundKeepAlive.shared.release() } }
                 try await self.provisioningCoordinator.completeProvisioning(
                     provisionMessage: provisioningMessage,
                     deviceName: UIDevice.current.name,

@@ -312,7 +312,7 @@ public class LinkAndSyncManagerImpl: LinkAndSyncManager {
         deviceSleepManager?.addBlock(blockObject: blockObject)
         defer { deviceSleepManager?.removeBlock(blockObject: blockObject) }
 
-        try checkCancelledOrAppBackgrounded()
+        try checkCancelled()
 
         let backupUploadResult = try await waitForPrimaryToUploadBackup(
             auth: auth,
@@ -334,7 +334,7 @@ public class LinkAndSyncManagerImpl: LinkAndSyncManager {
             }
         }
 
-        try checkCancelledOrAppBackgrounded()
+        try checkCancelled()
 
         let downloadedFileUrl = try await downloadEphemeralBackup(
             cdnNumber: cdnNumber,
@@ -342,7 +342,7 @@ public class LinkAndSyncManagerImpl: LinkAndSyncManager {
             progress: progress.child(for: .downloadingBackup),
         )
 
-        try checkCancelledOrAppBackgrounded()
+        try checkCancelled()
 
         try await restoreEphemeralBackup(
             fileUrl: downloadedFileUrl,
@@ -396,7 +396,7 @@ public class LinkAndSyncManagerImpl: LinkAndSyncManager {
                     }
                     return response
                 case .timeout:
-                    try checkCancelledOrAppBackgrounded()
+                    try checkCancelled()
                     // retry
                     continue whileLoop
                 case .invalidParameters:
@@ -604,7 +604,7 @@ public class LinkAndSyncManagerImpl: LinkAndSyncManager {
         ) { () async throws -> Requests.ExportAndUploadBackupResult in
             while true {
                 let startDate = MonotonicDate()
-                try checkCancelledOrAppBackgrounded()
+                try checkCancelled()
                 let response = try await networkManager.asyncRequest(Requests.waitForLinkNSyncBackupUpload(auth: auth))
                 switch Requests.WaitForLinkNSyncBackupUploadResponseCodes(rawValue: response.responseStatusCode) {
                 case .success:
@@ -687,6 +687,13 @@ public class LinkAndSyncManagerImpl: LinkAndSyncManager {
     }
 
     // MARK: - Helpers
+
+    /// The secondary's side, on Qiuling: when the primary is Signal on this
+    /// same phone it is in front while it uploads, so this app waits in the
+    /// background (kept alive by `BackgroundKeepAlive`) rather than giving up.
+    private func checkCancelled() throws {
+        try Task.checkCancellation()
+    }
 
     private func checkCancelledOrAppBackgrounded() throws {
         guard appContext.isAppForegroundAndActive() else {

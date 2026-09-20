@@ -68,6 +68,24 @@ something of your own, then on Capabilities turn off Push Notifications,
 Apple Pay, Communication Notifications and Data Protection (keep Background
 Modes and App Groups). Build and run on the phone.
 
+## Linking from Signal on the same phone
+
+Linking is built around a second device holding the camera. From App Store
+Signal on the *same* phone, the QR screen's **Copy code for another screen**
+opens a fresh 90-second socket (the server's limit), copies the code to the
+Universal Clipboard, freezes rotation and keeps this process alive in the
+background (`BackgroundKeepAlive`: a background task plus silence under the
+`audio` background mode). Paste on a Mac (Preview › ⌘N) and scan the Mac from
+Signal's Linked Devices with the scanner already open.
+
+History transfer works too, with one change on our side: Signal's
+link-and-sync aborts on *either* device the moment it leaves the foreground,
+and on one phone the primary has to be in front while it uploads. Qiuling's
+secondary path (`LinkAndSyncManager.waitForBackupAndRestore` and the upload
+long-poll) now checks only for cancellation, and the whole link is held open
+for up to 30 minutes. Stay in Signal until its upload finishes, then switch
+to Qiuling for the download and restore.
+
 ## Xcode version
 
 Build with **Xcode 26**, not 27. Signal has not adopted the UIScene lifecycle,

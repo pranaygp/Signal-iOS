@@ -1539,6 +1539,7 @@
 		762A416B2A38397500057955 /* UIKit+Text.swift in Sources */ = {isa = PBXBuildFile; fileRef = 762A416A2A38397500057955 /* UIKit+Text.swift */; };
 		762A416D2A383ABF00057955 /* UIKit+Image.swift in Sources */ = {isa = PBXBuildFile; fileRef = 762A416C2A383ABF00057955 /* UIKit+Image.swift */; };
 		762EBBD22A2FE370002FD28F /* BlockListUIUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 762EBBD12A2FE370002FD28F /* BlockListUIUtils.swift */; };
+		Q1UL1NG0000000000KEEPALB /* BackgroundKeepAlive.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL1NG00000000000KEEPAL /* BackgroundKeepAlive.swift */; };
 		7638499E2ED258CF00D0E43E /* StickerPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7638499D2ED258CA00D0E43E /* StickerPicker.swift */; };
 		763849A02ED2595200D0E43E /* StickerViewCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7638499F2ED2594D00D0E43E /* StickerViewCache.swift */; };
 		76387BF028F4ED73002C7BA5 /* CaseIterable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76387BEF28F4ED73002C7BA5 /* CaseIterable.swift */; };
@@ -5840,6 +5841,7 @@
 		762A416C2A383ABF00057955 /* UIKit+Image.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UIKit+Image.swift"; sourceTree = "<group>"; };
 		762EBBCF2A2FB759002FD28F /* AttachmentSharing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentSharing.swift; sourceTree = "<group>"; };
 		762EBBD12A2FE370002FD28F /* BlockListUIUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockListUIUtils.swift; sourceTree = "<group>"; };
+		Q1UL1NG00000000000KEEPAL /* BackgroundKeepAlive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundKeepAlive.swift; sourceTree = "<group>"; };
 		7634F08C2A21963600BB93D5 /* Sounds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sounds.swift; sourceTree = "<group>"; };
 		7638499D2ED258CA00D0E43E /* StickerPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerPicker.swift; sourceTree = "<group>"; };
 		7638499F2ED2594D00D0E43E /* StickerViewCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerViewCache.swift; sourceTree = "<group>"; };
@@ -9351,6 +9353,7 @@
 			isa = PBXGroup;
 			children = (
 				762EBBD12A2FE370002FD28F /* BlockListUIUtils.swift */,
+				Q1UL1NG00000000000KEEPAL /* BackgroundKeepAlive.swift */,
 				F963F817292D7E53007DBBBD /* FormattedNumberField.swift */,
 				F963F819292DA8E2007DBBBD /* FormattedNumberFieldTest.swift */,
 				34A955AF271B53F500B05242 /* GroupManager+GroupInvites.swift */,
@@ -18165,6 +18168,7 @@
 				88B98700288088B800F8C74D /* BaseMemberViewController.swift in Sources */,
 				760981882936DE90008F8300 /* BezierPathView.swift in Sources */,
 				762EBBD22A2FE370002FD28F /* BlockListUIUtils.swift in Sources */,
+				Q1UL1NG0000000000KEEPALB /* BackgroundKeepAlive.swift in Sources */,
 				3402AAA8271D9E180084CBAE /* BodyRangesTextView.swift in Sources */,
 				763A29B72F33F4AE0038E6A5 /* BubbleConfiguration.swift in Sources */,
 				5073EACD2C4F45F2001FBB3E /* CallLink.swift in Sources */,
