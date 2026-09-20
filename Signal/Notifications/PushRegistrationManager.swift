@@ -79,7 +79,7 @@ public class PushRegistrationManager: NSObject, PKPushRegistryDelegate {
         // the OS fails or hangs the request, registration reads that as a
         // generic error, and the flow loops. Declare it up front instead and
         // take the manual-message-fetch path the app already has for this.
-        if !Self.hasPushEntitlement {
+        if Self.pushEntitlementKnownMissing {
             throw PushRegistrationError.pushNotSupported(description: "This build has no push entitlement; messages are fetched manually.")
         }
 
@@ -143,6 +143,16 @@ public class PushRegistrationManager: NSObject, PKPushRegistryDelegate {
             return
         }
 
+        // NSCocoaErrorDomain 3000 is iOS saying the binary carries no
+        // aps-environment entitlement — this build, by construction. Report
+        // it as "push not supported" so registration and linking take the
+        // manual-message-fetch path instead of surfacing an unknown error.
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain, nsError.code == 3000 {
+            Self.pushEntitlementKnownMissing = true
+            vanillaTokenFuture.reject(PushRegistrationError.pushNotSupported(description: "no aps-environment entitlement"))
+            return
+        }
         vanillaTokenFuture.reject(error)
     }
 
@@ -193,19 +203,9 @@ public class PushRegistrationManager: NSObject, PKPushRegistryDelegate {
 
     // MARK: helpers
 
-    /// Whether the running binary was signed with `aps-environment`. Read from
-    /// the embedded provisioning profile, which TestFlight and development
-    /// builds carry; an App Store build has none and is assumed entitled.
-    private static let hasPushEntitlement: Bool = {
-        guard
-            let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
-            let data = try? Data(contentsOf: url),
-            let text = String(data: data, encoding: .isoLatin1)
-        else {
-            return true
-        }
-        return text.contains("<key>aps-environment</key>")
-    }()
+    /// Set once iOS has refused a token request for want of `aps-environment`
+    /// (this build never has it), so later requests skip the round trip.
+    private static var pushEntitlementKnownMissing = false
 
     // User notification settings must be registered *before* AppDelegate will
     // return any requested push tokens.
