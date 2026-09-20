@@ -22,7 +22,8 @@ class HomeTabBarController: UITabBarController {
     enum Tabs: Int {
         case chatList = 0
         case calls = 1
-        case stories = 2
+        case practice = 2
+        case stories = 3
 
         var title: String {
             switch self {
@@ -41,6 +42,8 @@ class HomeTabBarController: UITabBarController {
                     "STORIES_TITLE",
                     comment: "Title for the stories view.",
                 )
+            case .practice:
+                return "Practice"
             }
         }
 
@@ -52,6 +55,8 @@ class HomeTabBarController: UITabBarController {
                 return UIImage(named: "tab-calls")
             case .stories:
                 return UIImage(named: "tab-stories")
+            case .practice:
+                return UIImage(systemName: "character.book.closed")
             }
         }
 
@@ -63,6 +68,8 @@ class HomeTabBarController: UITabBarController {
                 return UIImage(named: "tab-calls")
             case .stories:
                 return UIImage(named: "tab-stories")
+            case .practice:
+                return UIImage(systemName: "character.book.closed.fill")
             }
         }
 
@@ -82,6 +89,8 @@ class HomeTabBarController: UITabBarController {
                 return "calls"
             case .stories:
                 return "stories"
+            case .practice:
+                return "practice"
             }
         }
     }
@@ -98,6 +107,14 @@ class HomeTabBarController: UITabBarController {
     lazy var callsListViewController = CallsListViewController()
     lazy var callsListNavController = OWSNavigationController(rootViewController: callsListViewController)
     lazy var callsListTabBarItem = Tabs.calls.tabBarItem
+
+    lazy var practiceNavController: OWSNavigationController = {
+        if #available(iOS 16, *) {
+            return OWSNavigationController(rootViewController: PracticeHostViewController())
+        }
+        return OWSNavigationController(rootViewController: UIViewController())
+    }()
+    lazy var practiceTabBarItem = Tabs.practice.tabBarItem
 
     // There are two things going on here that require this code. The first is a stored property can't
     // conditionally include itself with an @available property, so some type erasing hoops need to be
@@ -203,11 +220,13 @@ class HomeTabBarController: UITabBarController {
             return (callsListNavController, callsListTabBarItem)
         case .stories:
             return (storiesNavController, storiesTabBarItem)
+        case .practice:
+            return (practiceNavController, practiceTabBarItem)
         }
     }
 
     private func tabsToShow(areStoriesEnabled: Bool) -> [Tabs] {
-        var tabs = [Tabs.chatList, Tabs.calls]
+        var tabs = [Tabs.chatList, Tabs.calls, Tabs.practice]
         if areStoriesEnabled {
             tabs.append(Tabs.stories)
         }
@@ -357,6 +376,8 @@ extension HomeTabBarController: UITabBarControllerDelegate {
                 tableView = storiesViewController.tableView
             case .calls:
                 tableView = callsListViewController.tableView
+            case .practice:
+                return true
             }
 
             tableView.setContentOffset(CGPoint(x: 0, y: -tableView.safeAreaInsets.top), animated: true)

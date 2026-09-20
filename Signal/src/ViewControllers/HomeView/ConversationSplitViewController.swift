@@ -53,6 +53,8 @@ class ConversationSplitViewController: UISplitViewController, ConversationSplit 
             callsListNavController
         case .stories:
             storiesNavController
+        case .practice:
+            homeVC.practiceNavController
         }
 
         if isCollapsed {
@@ -148,6 +150,8 @@ class ConversationSplitViewController: UISplitViewController, ConversationSplit 
             chatListNavController.popToRootViewController(animated: animated)
         case .stories:
             storiesNavController.popToRootViewController(animated: animated)
+        case .practice:
+            homeVC.practiceNavController.popToRootViewController(animated: animated)
         }
     }
 

@@ -121,7 +121,17 @@ public final class QiulingFonts {
         }
     }
 
-    private struct ManifestEntry: Decodable { let family: String; let file: String; let sha256: String }
+    private struct ManifestEntry: Decodable { let family: String; let file: String; let sha256: String; let blocks: String? }
+
+    /// The ligature list for the current build — the blocks the font draws —
+    /// downloaded beside the font when the manifest names one, else bundled.
+    public var blocks: [String] {
+        let downloaded = defaults.string(forKey: currentShaKey).map { storeDirectory.appendingPathComponent("\($0).blocks.json") }
+        let url = downloaded.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
+            ?? Bundle.main.url(forResource: "blocks", withExtension: "json")
+        guard let url, let data = try? Data(contentsOf: url), let list = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+        return list
+    }
 
     private func request(_ url: URL) -> URLRequest {
         var r = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
@@ -153,8 +163,18 @@ public final class QiulingFonts {
         try FileManager.default.createDirectory(at: storeDirectory, withIntermediateDirectories: true)
         let dest = fileURL(sha: sha)
         try bytes.write(to: dest, options: .atomic)
-        // Keep only the new file; anything else in the store is superseded.
-        for old in (try? FileManager.default.contentsOfDirectory(at: storeDirectory, includingPropertiesForKeys: nil)) ?? [] where old != dest {
+        var keep: Set<URL> = [dest]
+        if let blocksFile = entry.blocks {
+            let blocksURL = manifestURL.deletingLastPathComponent().appendingPathComponent(blocksFile)
+            if let (blocks, r) = try? await URLSession.shared.data(for: request(blocksURL)), (r as? HTTPURLResponse)?.statusCode == 200,
+               (try? JSONDecoder().decode([String].self, from: blocks)) != nil {
+                let blocksDest = storeDirectory.appendingPathComponent("\(sha).blocks.json")
+                try blocks.write(to: blocksDest, options: .atomic)
+                keep.insert(blocksDest)
+            }
+        }
+        // Keep only the new files; anything else in the store is superseded.
+        for old in (try? FileManager.default.contentsOfDirectory(at: storeDirectory, includingPropertiesForKeys: nil)) ?? [] where !keep.contains(old) {
             try? FileManager.default.removeItem(at: old)
         }
         defaults.set(sha, forKey: currentShaKey)
@@ -162,7 +182,11 @@ public final class QiulingFonts {
 
         swapForProcess(to: dest)
         installPhoneWideIfNeeded()
+        NotificationCenter.default.post(name: Self.fontDidChange, object: nil)
     }
+
+    /// Posted after a new font (and its block list) has been swapped in.
+    public static let fontDidChange = Notification.Name("QiulingFonts.fontDidChange")
 
     /// Replace the process's copy of the family with the new file and ask the
     /// UI to redraw. Text already laid out keeps its old glyphs until it is
@@ -222,6 +246,12 @@ public final class QiulingFonts {
             else { return nil }
             return url
         }
+    }
+
+    /// The bytes of the font in use — the downloaded copy if there is one.
+    public func currentFontData() -> Data? {
+        guard let url = currentDownloadedURL ?? Self.bundledURL else { return nil }
+        return try? Data(contentsOf: url)
     }
 
     // MARK: - Bundled copy

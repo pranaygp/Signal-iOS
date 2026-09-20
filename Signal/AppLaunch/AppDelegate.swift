@@ -145,6 +145,16 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             return true
         }
 
+        // The trainer alone, with none of Signal behind it: for the simulator.
+        if PracticeOnlyLaunch.isRequested {
+            // Nothing below this line ran, so the lifecycle callbacks must
+            // treat the process as they would a failed launch and stay out.
+            didAppLaunchFail = true
+            let window = initializeWindow(mainAppContext: mainAppContext, rootViewController: UIViewController())
+            PracticeOnlyLaunch.launch(in: window)
+            return true
+        }
+
         debugLogger.enableFileLogging(appContext: mainAppContext, canLaunchInBackground: true)
         DebugLogger.configureSwiftLogging()
 

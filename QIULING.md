@@ -39,6 +39,41 @@ persistently, so it appears under Settings › General › Fonts for Pages, Word
 and any app with a font menu. iOS confirms with the user the first time; a
 changed file replaces the old registration.
 
+## The Practice tab
+
+A fourth tab in the home bar (Chats · Calls · Practice · Stories) carries the
+reading trainer natively — SwiftUI, Liquid Glass on iOS 26, the Vermilion
+palette — with the same features as `web/read.html`: the type race
+(sentences, words, or your own text; 15–120 s), recall (a mark and four
+spellings), write (English in, a Qiuling picture out, to share into any
+chat), progress across sittings, and the Safari bookmark that sets pages in
+the script. It lives in `Signal/Practice/`:
+
+- `PracticeEngine.swift` — the race engine ported from `web/read.js`, plus the
+  segmenter. Rather than carrying the ligature rules, it asks CoreText how the
+  font shapes each word (`CTRunGetStringIndices`), so it agrees with the
+  screen for whatever alphabet is current, downloaded copies included. The
+  corpus (`Resources/corpus.txt`, the trainer's) and per-alphabet stats
+  (`Application Support/Practice/<build>.json`) sit beside it.
+- `PracticeView.swift`, `TypeView.swift`, `PracticeSections.swift`,
+  `PracticeTheme.swift` — the screens.
+- `PracticeHostViewController.swift` — the UIKit shell, and the
+  `-QiulingPracticeOnly 1` launch path.
+
+### Trying it in the simulator
+
+```sh
+Scripts/qiuling-sim.sh          # build (incrementally), boot, install, open on the trainer
+Scripts/qiuling-sim.sh full     # the whole app instead
+```
+
+The default launches with `-QiulingPracticeOnly 1`, which makes the app
+delegate stop before any of Signal starts — no database, no registration —
+and put the trainer up alone. Nothing else is reachable in that mode; it is
+for iterating on the trainer without a phone. Taps from a script are best
+sent with `idb ui tap` (`brew install idb-companion`, `uv tool install
+fb-idb`); tools that move the Mac's mouse fight the person at the keyboard.
+
 ## Ship to TestFlight
 
 `Scripts/qiuling-ship.sh` archives and uploads with no Xcode UI, authenticated
