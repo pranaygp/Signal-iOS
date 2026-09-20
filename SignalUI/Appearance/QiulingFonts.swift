@@ -32,8 +32,11 @@ public final class QiulingFonts {
 
     private let defaults = UserDefaults.standard
     private let currentShaKey = "QiulingFonts.currentSha"
+    private let currentBuiltAtKey = "QiulingFonts.currentBuiltAt"
     private let installedShaKey = "QiulingFonts.installedSha"
     private let lastCheckKey = "QiulingFonts.lastCheck"
+    private let lastCheckOutcomeKey = "QiulingFonts.lastCheckOutcome"
+    private let lastCheckMessageKey = "QiulingFonts.lastCheckMessage"
     private let minimumCheckInterval: TimeInterval = 60 * 60
 
     private var manifestURL: URL? {
@@ -56,6 +59,14 @@ public final class QiulingFonts {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
+    /// The file the current font comes from, and its hash: the downloaded copy
+    /// when there is one, else the bundled file.
+    private var currentFont: (url: URL, sha: String)? {
+        if let url = currentDownloadedURL, let sha = defaults.string(forKey: currentShaKey) { return (url, sha) }
+        guard let url = Self.bundledURL else { return nil }
+        return (url, Self.bundledSha)
+    }
+
     /// The URL currently registered for this process, so a swap can unregister it.
     private var processRegisteredURL: URL?
 
@@ -70,6 +81,7 @@ public final class QiulingFonts {
         guard CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error) else {
             Logger.warn("downloaded font failed to register, falling back to the bundled one: \(String(describing: error?.takeRetainedValue()))")
             defaults.removeObject(forKey: currentShaKey)
+            defaults.removeObject(forKey: currentBuiltAtKey)
             return false
         }
         processRegisteredURL = url
@@ -94,34 +106,194 @@ public final class QiulingFonts {
     @MainActor
     public func start() {
         installPhoneWideIfNeeded()
+        mirrorForExtension()
         NotificationCenter.default.addObserver(
             forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main,
-        ) { [weak self] _ in self?.checkForUpdateIfDue() }
+        ) { [weak self] _ in Task { @MainActor in self?.checkForUpdateIfDue() } }
         checkForUpdateIfDue()
+    }
+
+    // MARK: - Status
+
+    /// How the last update check ended.
+    public enum CheckOutcome: Equatable {
+        case upToDate
+        case updated
+        case failed(String)
+
+        public var isFailure: Bool {
+            if case .failed = self { return true }
+            return false
+        }
+    }
+
+    public struct LastCheck: Equatable {
+        public let date: Date
+        public let outcome: CheckOutcome
+    }
+
+    /// Whether the copy installed for every app on the phone is the one in use.
+    public enum PhoneWideStatus: Equatable {
+        case installed
+        case olderCopy
+        case notInstalled
+    }
+
+    /// Everything Settings › Qiuling shows, read in one go.
+    public struct Status {
+        public let family: String
+        public let buildId: String
+        /// The build id as a name: "Morph".
+        public var displayName: String { buildId.prefix(1).uppercased() + buildId.dropFirst() }
+        public let sha: String
+        public let isUsingDownloadedCopy: Bool
+        /// When the font in use was built, if known.
+        public let buildDate: Date?
+        /// The last update check, or nil if there has never been one.
+        public let lastCheck: LastCheck?
+        /// Whether this build knows where to look for updates.
+        public let updatesAvailable: Bool
+        public let phoneWide: PhoneWideStatus
+        /// How many letters and letter groups the font draws as one shape.
+        public let marksCount: Int
+    }
+
+    /// Posted whenever anything in `status` may have changed.
+    public static let statusDidChange = Notification.Name("QiulingFonts.statusDidChange")
+
+    public var status: Status {
+        let current = currentFont
+        let downloaded = currentDownloadedURL != nil
+        return Status(
+            family: Self.family,
+            buildId: Self.buildId,
+            sha: current?.sha ?? "",
+            isUsingDownloadedCopy: downloaded,
+            buildDate: downloaded ? downloadedBuildDate : Self.bundledBuildDate,
+            lastCheck: lastCheck,
+            updatesAvailable: manifestURL != nil && bypassToken != nil,
+            phoneWide: phoneWideStatus(currentSha: current?.sha),
+            marksCount: blocks.count,
+        )
+    }
+
+    private var lastCheck: LastCheck? {
+        guard let date = defaults.object(forKey: lastCheckKey) as? Date else { return nil }
+        switch defaults.string(forKey: lastCheckOutcomeKey) {
+        case "updated": return LastCheck(date: date, outcome: .updated)
+        case "failed": return LastCheck(date: date, outcome: .failed(defaults.string(forKey: lastCheckMessageKey) ?? ""))
+        // Checks recorded before outcomes were, all of which succeeded.
+        default: return LastCheck(date: date, outcome: .upToDate)
+        }
+    }
+
+    private func record(_ outcome: CheckOutcome) {
+        defaults.set(Date(), forKey: lastCheckKey)
+        switch outcome {
+        case .upToDate:
+            defaults.set("upToDate", forKey: lastCheckOutcomeKey)
+            defaults.removeObject(forKey: lastCheckMessageKey)
+        case .updated:
+            defaults.set("updated", forKey: lastCheckOutcomeKey)
+            defaults.removeObject(forKey: lastCheckMessageKey)
+        case .failed(let message):
+            defaults.set("failed", forKey: lastCheckOutcomeKey)
+            defaults.set(message, forKey: lastCheckMessageKey)
+        }
+    }
+
+    private static let iso8601 = ISO8601DateFormatter()
+    private static let iso8601Fractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    private static func date(fromISO8601 string: String) -> Date? {
+        iso8601Fractional.date(from: string) ?? iso8601.date(from: string)
+    }
+
+    private var downloadedBuildDate: Date? {
+        defaults.string(forKey: currentBuiltAtKey).flatMap(Self.date(fromISO8601:))
+            ?? currentDownloadedURL.flatMap(Self.builtDate(ofFontAt:))
+    }
+
+    /// When the bundled font was built: the app's build stamp when the build
+    /// script left one, else the file's own date, which the copy into the
+    /// bundle preserves.
+    /// When the alphabet itself was built: the font's own `head.modified`,
+    /// which the build tool stamps. File dates say when the app was built.
+    private static let bundledBuildDate: Date? = bundledURL.flatMap(builtDate(ofFontAt:))
+
+    static func builtDate(ofFontAt url: URL) -> Date? {
+        guard let data = try? Data(contentsOf: url), data.count > 12 else { return nil }
+        func u16(_ o: Int) -> Int { Int(data[o]) << 8 | Int(data[o + 1]) }
+        func u32(_ o: Int) -> Int { u16(o) << 16 | u16(o + 2) }
+        let tables = u16(4)
+        for i in 0..<tables {
+            let rec = 12 + i * 16
+            guard rec + 16 <= data.count else { return nil }
+            if data[rec..<rec + 4].elementsEqual("head".utf8) {
+                let off = u32(rec + 8) + 28
+                guard off + 8 <= data.count else { return nil }
+                let modified = Int64(u32(off)) << 32 | Int64(u32(off + 4))
+                // The head table counts seconds from 1904.
+                return Date(timeIntervalSince1970: TimeInterval(modified) - 2_082_844_800)
+            }
+        }
+        return nil
+    }
+
+    private func phoneWideStatus(currentSha: String?) -> PhoneWideStatus {
+        let registered = registeredPhoneWide()
+        guard !registered.isEmpty else { return .notInstalled }
+        if let currentSha, defaults.string(forKey: installedShaKey) == currentSha { return .installed }
+        return .olderCopy
     }
 
     // MARK: - Over the air
 
-    private var checking = false
+    private var inFlightCheck: Task<CheckOutcome, Never>?
 
     @MainActor
     private func checkForUpdateIfDue() {
-        guard let manifestURL, bypassToken != nil else { return }
-        let last = defaults.object(forKey: lastCheckKey) as? Date ?? .distantPast
-        guard Date().timeIntervalSince(last) > minimumCheckInterval, !checking else { return }
-        checking = true
-        Task {
-            defer { checking = false }
-            do {
-                try await checkForUpdate(manifestURL: manifestURL)
-                defaults.set(Date(), forKey: lastCheckKey)
-            } catch {
-                Logger.warn("Qiuling font update check failed: \(error)")
-            }
+        guard manifestURL != nil, bypassToken != nil, inFlightCheck == nil else { return }
+        // A failed check is retried on the next chance rather than waiting out the hour.
+        if let lastCheck, !lastCheck.outcome.isFailure, Date().timeIntervalSince(lastCheck.date) < minimumCheckInterval {
+            return
         }
+        Task { _ = await checkForUpdates() }
     }
 
-    private struct ManifestEntry: Decodable { let family: String; let file: String; let sha256: String; let blocks: String? }
+    /// Check the manifest now, whatever the hourly schedule says, and record
+    /// how it went. A check already under way is joined rather than repeated.
+    @MainActor
+    public func checkForUpdates() async -> CheckOutcome {
+        if let inFlightCheck { return await inFlightCheck.value }
+        guard let manifestURL, bypassToken != nil else { return .failed("Updates aren't available in this build.") }
+        let task = Task { @MainActor () -> CheckOutcome in
+            do {
+                return try await checkForUpdate(manifestURL: manifestURL) ? .updated : .upToDate
+            } catch {
+                Logger.warn("Qiuling font update check failed: \(error)")
+                return .failed(error.localizedDescription)
+            }
+        }
+        inFlightCheck = task
+        let outcome = await task.value
+        inFlightCheck = nil
+        record(outcome)
+        NotificationCenter.default.post(name: Self.statusDidChange, object: nil)
+        return outcome
+    }
+
+    private struct ManifestEntry: Decodable {
+        let family: String
+        let file: String
+        let sha256: String
+        let blocks: String?
+        let builtAt: String?
+    }
 
     /// The ligature list for the current build — the blocks the font draws —
     /// downloaded beside the font when the manifest names one, else bundled.
@@ -139,8 +311,9 @@ public final class QiulingFonts {
         return r
     }
 
+    /// Returns whether a new font was downloaded and swapped in.
     @MainActor
-    private func checkForUpdate(manifestURL: URL) async throws {
+    private func checkForUpdate(manifestURL: URL) async throws -> Bool {
         let (data, response) = try await URLSession.shared.data(for: request(manifestURL))
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             throw OWSGenericError("manifest: HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)")
@@ -150,7 +323,13 @@ public final class QiulingFonts {
         guard entry.family == Self.family else { throw OWSGenericError("manifest family \(entry.family) is not \(Self.family)") }
 
         let have = defaults.string(forKey: currentShaKey) ?? Self.bundledSha
-        guard entry.sha256 != have else { return }
+        guard entry.sha256 != have else {
+            // The manifest may have learnt the build date since the copy landed.
+            if let builtAt = entry.builtAt, defaults.string(forKey: currentShaKey) != nil {
+                defaults.set(builtAt, forKey: currentBuiltAtKey)
+            }
+            return false
+        }
 
         let fontURL = manifestURL.deletingLastPathComponent().appendingPathComponent(entry.file)
         let (bytes, fontResponse) = try await URLSession.shared.data(for: request(fontURL))
@@ -178,11 +357,18 @@ public final class QiulingFonts {
             try? FileManager.default.removeItem(at: old)
         }
         defaults.set(sha, forKey: currentShaKey)
+        if let builtAt = entry.builtAt {
+            defaults.set(builtAt, forKey: currentBuiltAtKey)
+        } else {
+            defaults.removeObject(forKey: currentBuiltAtKey)
+        }
         Logger.info("Qiuling font updated to \(sha.prefix(8))")
 
         swapForProcess(to: dest)
+        mirrorForExtension()
         installPhoneWideIfNeeded()
         NotificationCenter.default.post(name: Self.fontDidChange, object: nil)
+        return true
     }
 
     /// Posted after a new font (and its block list) has been swapped in.
@@ -193,7 +379,9 @@ public final class QiulingFonts {
     /// rebuilt; the theme-change notification rebuilds most of it.
     @MainActor
     private func swapForProcess(to url: URL) {
-        if let old = processRegisteredURL {
+        // A launch that registered the bundled file itself (the practice-only
+        // simulator run) never told us; the bundled file is what to replace.
+        if let old = processRegisteredURL ?? Self.bundledURL {
             CTFontManagerUnregisterFontsForURL(old as CFURL, .process, nil)
         }
         var error: Unmanaged<CFError>?
@@ -205,36 +393,91 @@ public final class QiulingFonts {
         }
     }
 
+    // MARK: - Safari extension
+
+    /// The Safari extension cannot read this app's container, so the font in
+    /// use is mirrored into the shared App Group: `QiulingFonts/current.ttf`
+    /// beside a `current.json` naming its family, hash and build. Written at
+    /// launch and after every swap; skipped when the mirror already matches.
+    private func mirrorForExtension() {
+        guard let current = currentFont else { return }
+        let group = "group.\(Bundle.main.bundleIdPrefix).signal.group"
+        guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) else {
+            return Logger.warn("no App Group container for \(group); the Safari extension gets no font")
+        }
+        let directory = container.appendingPathComponent("QiulingFonts", isDirectory: true)
+        let fontDest = directory.appendingPathComponent("current.ttf")
+        let infoDest = directory.appendingPathComponent("current.json")
+        let info: [String: String] = ["family": Self.family, "sha256": current.sha, "buildId": Self.buildId]
+        DispatchQueue.global(qos: .utility).async {
+            do {
+                if
+                    let existing = try? Data(contentsOf: infoDest),
+                    let existingInfo = try? JSONDecoder().decode([String: String].self, from: existing),
+                    existingInfo == info,
+                    FileManager.default.fileExists(atPath: fontDest.path)
+                {
+                    return
+                }
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                try Data(contentsOf: current.url).write(to: fontDest, options: .atomic)
+                try JSONEncoder().encode(info).write(to: infoDest, options: .atomic)
+                Logger.info("mirrored Qiuling font \(current.sha.prefix(8)) for the Safari extension")
+            } catch {
+                Logger.warn("could not mirror the Qiuling font for the Safari extension: \(error)")
+            }
+        }
+    }
+
     // MARK: - Phone-wide
 
     /// Register the current font for every app on the phone (Settings ›
-    /// General › Fonts), replacing an older copy. iOS confirms with the user
-    /// the first time. Apple's font-provider entitlement is what allows it.
+    /// General › Fonts) when the installed copy is not the one in use.
     @MainActor
     private func installPhoneWideIfNeeded() {
-        let url = currentDownloadedURL ?? Self.bundledURL
-        guard let url else { return Logger.warn("no Qiuling font to install") }
-        let sha = defaults.string(forKey: currentShaKey) ?? Self.bundledSha
-        if defaults.string(forKey: installedShaKey) == sha, !registeredPhoneWide().isEmpty { return }
+        guard let current = currentFont else { return Logger.warn("no Qiuling font to install") }
+        if defaults.string(forKey: installedShaKey) == current.sha, !registeredPhoneWide().isEmpty { return }
+        Task { _ = await installPhoneWide() }
+    }
 
-        let stale = registeredPhoneWide()
+    /// Register the current font for every app on the phone, replacing an
+    /// older copy. iOS confirms with the user the first time. Apple's
+    /// font-provider entitlement is what allows it.
+    @MainActor
+    public func installPhoneWide() async -> Result<Void, Error> {
+        guard let current = currentFont else { return .failure(OWSGenericError("no Qiuling font to install")) }
+
+        let stale = registeredPhoneWide().filter { $0 != current.url }
         if !stale.isEmpty {
             CTFontManagerUnregisterFontURLs(stale as CFArray, .persistent) { _, _ in true }
         }
-        CTFontManagerRegisterFontURLs([url] as CFArray, .persistent, true) { [defaults, installedShaKey] errors, done in
-            let errors = errors as? [CFError] ?? []
-            if done {
-                DispatchQueue.main.async {
-                    if errors.isEmpty {
-                        defaults.set(sha, forKey: installedShaKey)
-                        Logger.info("Qiuling installed for the whole phone (\(sha.prefix(8)))")
-                    } else {
-                        Logger.warn("Qiuling phone-wide registration: \(errors)")
-                    }
+        let result: Result<Void, Error> = await withCheckedContinuation { continuation in
+            // The handler runs once per font and once more when done; only the
+            // last call may resume, and only once.
+            var resumed = false
+            var collected: [CFError] = []
+            CTFontManagerRegisterFontURLs([current.url] as CFArray, .persistent, true) { errors, done in
+                // Errors can arrive on an earlier call than the final one.
+                collected += errors as? [CFError] ?? []
+                guard done, !resumed else { return true }
+                resumed = true
+                if let error = collected.first {
+                    continuation.resume(returning: .failure(error as Error))
+                } else {
+                    continuation.resume(returning: .success(()))
                 }
+                return true
             }
-            return true
         }
+        switch result {
+        case .success:
+            defaults.set(current.sha, forKey: installedShaKey)
+            Logger.info("Qiuling installed for the whole phone (\(current.sha.prefix(8)))")
+        case .failure(let error):
+            Logger.warn("Qiuling phone-wide registration: \(error)")
+        }
+        NotificationCenter.default.post(name: Self.statusDidChange, object: nil)
+        return result
     }
 
     private func registeredPhoneWide() -> [URL] {
@@ -250,7 +493,7 @@ public final class QiulingFonts {
 
     /// The bytes of the font in use — the downloaded copy if there is one.
     public func currentFontData() -> Data? {
-        guard let url = currentDownloadedURL ?? Self.bundledURL else { return nil }
+        guard let url = currentFont?.url else { return nil }
         return try? Data(contentsOf: url)
     }
 

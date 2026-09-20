@@ -155,3 +155,74 @@ Drop a newer `*Write-Regular.ttf` from the qiuling repo into `SignalUI/Fonts`,
 add it to the SignalUI target's resources, and change `qiulingFontName` in
 `UIFont+Qiuling.swift` to its PostScript name. `qiulingScale` is how much
 larger than Latin the script is set; 1.8 reads well for 1.5.
+
+## Safari extension
+
+The app also carries a Safari Web Extension, **Qiuling** (target
+`SafariExtension`, bundle ID `<prefix>.q.safari`), which does on the phone
+what the trainer's bookmarklet does on a desktop — iOS Safari cannot run a
+bookmarklet from a page, but it can run an extension. Tapping Qiuling in
+Safari's page menu (the `AA`/puzzle-piece button) toggles the current page:
+on, every text element is set in the "Qiuling Reader" family with its
+font-size and line-height doubled; off puts every inline style back exactly.
+The button shows an `ON` badge while a page is toggled; a navigation makes a
+fresh document, which is never styled.
+
+The in-page routine is `web/reader.js` from the qiuling repo, carried
+verbatim in `SafariExtension/Resources/background.js` (`QIULING_KEEP`,
+`qiulingCss`, `qiulingApply`, scale 2) — the only change is the @font-face
+`format("truetype")`, because the phone's font is a TTF. If the routine
+changes upstream, copy it in again. The background script injects it with
+`scripting.executeScript` and reads the page's state back the same way, so a
+toggle is truthful even after Safari unloads the non-persistent background
+page.
+
+**Where the font comes from.** The extension asks its native handler
+(`SafariWebExtensionHandler.swift`) with `sendNativeMessage("application.id",
+{type: "font"})` and gets `{sha256, base64}` of the current TTF. The handler
+reads the App Group container `group.<prefix>.signal.group` (prefix from the
+extension's `OWSBundleIDPrefix` Info.plist key, like the other extensions):
+`QiulingFonts/current.ttf`, checked against the `sha256` in
+`QiulingFonts/current.json` (`{"family","sha256","buildId"}`) when that file
+is present. The app is responsible for keeping those two files current —
+bundled font on first launch, then whatever it downloads over the air. Until
+the app has run once (a fresh install), the files are missing and the handler
+answers with the copy of the TTF bundled in the extension
+(`SafariExtension/Resources/QiulingMorphWrite-Regular.ttf`; refresh it when
+the app's bundled font changes). The background script caches the reply in
+`storage.local` keyed by sha and injects it as a `data:font/ttf;base64,…`
+URL; it asks native again on browser start, on install, and on a tap when the
+cache is more than an hour old, so a new font reaches Safari without a
+reinstall. If native messaging fails outright it falls back to the bundled TTF
+by its extension URL (`web_accessible_resources`).
+
+**Enabling it on the phone.** Install the app, then Settings › Apps › Safari
+› Extensions › Qiuling › on (or in Safari: page menu › Manage Extensions).
+The first tap on a site asks for permission to read the page — "Allow for One
+Day" or "Always Allow"; "Always Allow on Every Website" is the setting to pick
+if you want one tap per page. The extension's entitlements are the app groups
+only, so it signs with the same personal team as the rest.
+
+In the simulator `Scripts/qiuling-sim.sh` builds and embeds it
+(`Signal.app/PlugIns/SafariExtension.appex`, with `manifest.json` at the
+bundle root). The script builds with `CODE_SIGNING_ALLOWED=NO`, and Safari
+silently refuses to enable an unsigned extension (the switch will not flip),
+so ad-hoc sign the built app before installing it if you want to try the
+extension there:
+
+```sh
+APP=build/DerivedData/Build/Products/Debug-iphonesimulator/Signal.app
+for f in "$APP"/Frameworks/*.framework "$APP"/PlugIns/*.appex; do codesign -f -s - "$f"; done
+codesign -f -s - "$APP" && xcrun simctl install <udid> "$APP"
+```
+
+Then enable it from Safari's page menu (the page icon left of the address
+bar › Manage Extensions), open a page with `xcrun simctl openurl <udid>
+https://…`, and tap Qiuling in the same menu.
+
+A note on the project: the files under `SafariExtension/Resources` are added
+to the target individually (`_locales` and `images` as folder references),
+not as one `Resources` folder reference. A top-level `Resources/` directory
+inside a flat iOS bundle makes CFBundle read it as the old version-0 layout
+and lose the root `Info.plist`, and Xcode's embedded-binary validation then
+fails with "Couldn't load Info dictionary".

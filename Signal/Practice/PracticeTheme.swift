@@ -6,28 +6,71 @@
 import SignalUI
 import SwiftUI
 
-/// The practice screens' vocabulary: the app's palette as SwiftUI colours and
-/// the script's font at the sizes the trainer uses. Controls are the system's
-/// — segmented pickers, bordered and glass buttons, menus — tinted with the
-/// brand's Action red; only the content surfaces are drawn here.
+/// The practice screens' vocabulary. Surfaces and labels come from
+/// `Color.Signal`; only the handful of meanings Signal has no word for —
+/// right, wrong, the current mark — are named here, and this is the one place
+/// in Practice where a hex value may appear.
 @available(iOS 16, *)
 enum PracticeTheme {
-    static let paper = Color(uiColor: Brand.background)
-    static let surface = Color(uiColor: Brand.surfaceColor)
-    static let ink = Color(uiColor: Brand.text)
-    static let muted = Color(uiColor: Brand.textSecondary)
-    static let faint = Color(uiColor: UIColor(light: UIColor(rgbHex: 0xC9BDB0), dark: UIColor(rgbHex: 0x74675E)))
     static let accent = Color(uiColor: Brand.actionColor)
     static let good = Color(uiColor: UIColor(light: Brand.success, dark: UIColor(rgbHex: 0x86B789)))
+    static let wrong = Color(uiColor: UIColor(light: Brand.error, dark: UIColor(rgbHex: 0xE0847E)))
     static let tint = Color(uiColor: Brand.selection)
-    static let line = Color(uiColor: Brand.separator)
     static let wrongBackground = Color(uiColor: UIColor(light: UIColor(rgbHex: 0xF6D9D3), dark: UIColor(rgbHex: 0x4A2A25)))
 
     /// The script. `Font.custom` resolves registered process fonts, including
     /// a copy `QiulingFonts` swapped in over the air.
     static func script(_ size: CGFloat) -> Font { .custom(QiulingFonts.family, size: size) }
-    static let mono = Font.system(.footnote, design: .monospaced)
-    static let numeral = Font.system(size: 44, weight: .semibold, design: .monospaced).monospacedDigit()
+
+    /// The tint behind a mark in the heat map, a chip or a status capsule.
+    static func statusFill(_ label: Recall.Label) -> Color {
+        switch label {
+        case .new: Color.Signal.groupedBackground
+        case .struggling: wrong.opacity(0.18)
+        case .learning: Color.Signal.accent.opacity(0.12)
+        case .mastered: good.opacity(0.22)
+        }
+    }
+
+    /// The text colour that names a learning state.
+    static func statusColor(_ label: Recall.Label) -> Color {
+        switch label {
+        case .new: Color.Signal.secondaryLabel
+        case .struggling: wrong
+        case .learning: Color.Signal.accent
+        case .mastered: good
+        }
+    }
+}
+
+/// The numbers as the practice screens spell them.
+enum PracticeFormat {
+    /// `0.8 s` from a millisecond count.
+    static func seconds(ms: Double) -> String { String(format: "%.1f s", ms / 1000) }
+    static func seconds(ms: Int) -> String { seconds(ms: Double(ms)) }
+    /// `0.8 seconds`, for VoiceOver.
+    static func secondsSpoken(ms: Int) -> String { String(format: "%.1f seconds", Double(ms) / 1000) }
+
+    /// `30 s`, `1 min`, `2 min` for a race's clock in a label or row.
+    static func duration(_ seconds: Int) -> String {
+        seconds % 60 == 0 ? "\(seconds / 60) min" : "\(seconds) s"
+    }
+
+    /// `30 seconds`, `1 minute`, `2 minutes` for a menu.
+    static func durationSpelled(_ seconds: Int) -> String {
+        if seconds % 60 == 0 { let m = seconds / 60; return m == 1 ? "1 minute" : "\(m) minutes" }
+        return "\(seconds) seconds"
+    }
+
+    /// A mark's spelling read letter by letter, for VoiceOver.
+    static func spelled(_ mark: String) -> String { mark.map(String.init).joined(separator: " ") }
+}
+
+@available(iOS 16, *)
+extension Recall.Label {
+    var title: String {
+        switch self { case .new: "New"; case .struggling: "Struggling"; case .learning: "Learning"; case .mastered: "Mastered" }
+    }
 }
 
 @available(iOS 16, *)
@@ -36,23 +79,10 @@ extension View {
     @ViewBuilder
     func practiceGlass() -> some View {
         if #available(iOS 26, *) {
-            self.glassEffect(.regular, in: .capsule)
+            self.glassEffect(.regular.interactive(), in: .capsule)
         } else {
             self.background(.ultraThinMaterial, in: Capsule())
         }
-    }
-
-    /// A card on the paper: the brand's Surface with a hairline border. The
-    /// border is decoration only; touches fall through to the content.
-    func practiceCard() -> some View {
-        self
-            .background(PracticeTheme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(PracticeTheme.line, lineWidth: 1).allowsHitTesting(false))
-    }
-
-    /// Section caption in the trainer's voice.
-    func practiceLabel() -> some View {
-        self.font(.system(size: 11, weight: .semibold, design: .monospaced)).textCase(.uppercase).kerning(1.2).foregroundStyle(PracticeTheme.muted)
     }
 
     /// The system's primary button: glass on iOS 26, bordered-prominent below.
@@ -69,32 +99,74 @@ extension View {
     @ViewBuilder
     func practiceSecondaryButton() -> some View {
         if #available(iOS 26, *) {
-            self.buttonStyle(.glass).tint(PracticeTheme.ink)
+            self.buttonStyle(.glass).tint(Color.Signal.label)
         } else {
-            self.buttonStyle(.bordered).tint(PracticeTheme.ink)
+            self.buttonStyle(.bordered).tint(Color.Signal.label)
         }
+    }
+
+    /// A card that is not a table row: the same surface and rounding as one.
+    func practiceCardBackground() -> some View {
+        self.background(Color.Signal.secondaryGroupedBackground, in: RoundedRectangle(cornerRadius: OWSTableViewController2.cellRounding, style: .continuous))
+    }
+
+    /// A tap of the haptic engine when `trigger` changes, where the system
+    /// offers one (iOS 17). `verdict` says which kind, or nil for none.
+    @ViewBuilder
+    func practiceHaptic<T: Equatable>(trigger: T, verdict: @escaping (T, T) -> Bool?) -> some View {
+        if #available(iOS 17, *) {
+            self.sensoryFeedback(trigger: trigger) { old, new in
+                switch verdict(old, new) { case true?: .success; case false?: .error; case nil: nil }
+            }
+        } else {
+            self
+        }
+    }
+
+    /// Swaps a label's symbol with the system's replace effect where it exists.
+    @ViewBuilder
+    func practiceSymbolReplace() -> some View {
+        if #available(iOS 17, *) { self.contentTransition(.symbolEffect(.replace)) } else { self }
+    }
+
+    /// Success feedback whenever `trigger` becomes true.
+    func practiceSuccessHaptic(trigger: Bool) -> some View {
+        practiceHaptic(trigger: trigger) { _, new in new ? true : nil }
     }
 }
 
-/// A multi-line field on a card. Focus is taken explicitly on tap: the
-/// editor's own hit-testing is unreliable inside the section's scroll view.
+/// A multi-line field in a table row. Focus is taken explicitly on tap: the
+/// editor's own hit-testing is unreliable inside a list.
 @available(iOS 16, *)
 struct PracticeEditor: View {
     @Binding var text: String
+    var placeholder = ""
     var minHeight: CGFloat = 96
     @FocusState private var editing: Bool
 
     var body: some View {
         TextEditor(text: $text)
-            .font(.system(size: 15, design: .monospaced))
+            .font(.body)
             .focused($editing)
-            .autocorrectionDisabled()
-            .textInputAutocapitalization(.never)
+            .textInputAutocapitalization(.sentences)
             .scrollContentBackground(.hidden)
             .frame(minHeight: minHeight)
-            .padding(8)
+            .overlay(alignment: .topLeading) {
+                if text.isEmpty {
+                    Text(placeholder)
+                        .font(.body)
+                        .foregroundStyle(Color.Signal.tertiaryLabel)
+                        .padding(.top, 8).padding(.leading, 5)
+                        .allowsHitTesting(false)
+                }
+            }
             .contentShape(Rectangle())
             .onTapGesture { editing = true }
-            .practiceCard()
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { editing = false }
+                }
+            }
     }
 }

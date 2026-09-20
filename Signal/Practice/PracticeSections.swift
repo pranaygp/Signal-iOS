@@ -6,7 +6,6 @@
 import Charts
 import SignalUI
 import SwiftUI
-import UniformTypeIdentifiers
 
 // MARK: - Write
 
@@ -14,60 +13,124 @@ import UniformTypeIdentifiers
 /// apps draw everything in the system font, so a message travels as an image.
 @available(iOS 16, *)
 struct WriteView: View {
-    @AppStorage("Practice.draft") private var draft = ""
+    static let draftKey = "Practice.draft"
+
+    @AppStorage(WriteView.draftKey) private var draft = ""
     @State private var rendered: UIImage?
-    @State private var status = ""
+    @State private var renderFailed = false
+    @State private var copied = false
+    @State private var renderTask: Task<Void, Never>?
+    @State private var revertTask: Task<Void, Never>?
     @Environment(\.colorScheme) private var scheme
+    @ScaledMetric(relativeTo: .largeTitle) private var previewSize: CGFloat = 44
+
+    private var hasMessage: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var canShare: Bool { hasMessage && rendered != nil }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Type here, then share the picture into any chat.")
-                    .font(.footnote).foregroundStyle(PracticeTheme.muted).padding(.horizontal, 20).padding(.top, 8)
-                PracticeEditor(text: $draft).padding(.horizontal, 16)
-                Group {
-                    if draft.isEmpty {
-                        Text("what you type appears here in the script").font(.system(size: 13)).foregroundStyle(PracticeTheme.faint)
-                    } else {
-                        Text(draft).font(PracticeTheme.script(44)).lineSpacing(8)
-                    }
-                }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(18)
-                    .practiceCard()
-                    .padding(.horizontal, 16)
-                HStack(spacing: 10) {
-                    if let rendered {
-                        ShareLink(item: Image(uiImage: rendered), preview: SharePreview("Qiuling", image: Image(uiImage: rendered)))
-                            .practicePrimaryButton()
-                    }
-                    Button("Copy", systemImage: "doc.on.doc") {
-                        if let img = render() { UIPasteboard.general.image = img; status = "copied — paste it into the chat" }
-                    }.practiceSecondaryButton()
-                    Text(status).font(.system(size: 11, design: .monospaced)).foregroundStyle(PracticeTheme.muted)
-                }
-                .padding(.horizontal, 20)
+        SignalList {
+            SignalSection {
+                PracticeEditor(text: $draft, placeholder: "Type in English")
+                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+            } header: {
+                Text("Your message")
+            } footer: {
+                Text("Letters and spaces are drawn. Numbers and punctuation are left out.")
             }
+
+            SignalSection {
+                preview
+                    .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
+                    .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Preview in Qiuling")
+                    .accessibilityValue(draft)
+            } header: {
+                Text("In Qiuling")
+            } footer: {
+                Text("Other apps can't draw Qiuling, so your message is shared as a picture.")
+            }
+
+            Color.clear.frame(height: 88).listRowBackground(Color.clear).listRowInsets(EdgeInsets())
         }
-        .onChange(of: draft) { _ in rendered = render() }
+        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom) { actions }
+        .onChange(of: draft) { _ in scheduleRender() }
         .onAppear { rendered = render() }
+        .practiceSuccessHaptic(trigger: copied)
+    }
+
+    @ViewBuilder
+    private var preview: some View {
+        if renderFailed {
+            Text("The script isn't available right now.").font(.subheadline).foregroundStyle(.secondary)
+        } else if hasMessage {
+            Text(draft).font(PracticeTheme.script(previewSize)).lineSpacing(8).foregroundStyle(Color.Signal.label)
+        } else {
+            Text("Your message appears here in Qiuling.").font(.subheadline).foregroundStyle(.secondary)
+        }
+    }
+
+    private var actions: some View {
+        HStack(spacing: 12) {
+            ShareLink(
+                item: Image(uiImage: rendered ?? UIImage()),
+                preview: SharePreview("Qiuling message", image: Image(uiImage: rendered ?? UIImage())),
+            ) {
+                Label("Share", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
+            }
+            .practicePrimaryButton()
+            .controlSize(.large)
+
+            Button { copy() } label: {
+                Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc").frame(maxWidth: .infinity)
+            }
+            .practiceSecondaryButton()
+            .controlSize(.large)
+            .practiceSymbolReplace()
+        }
+        .disabled(!canShare)
+        .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 12)
+    }
+
+    private func copy() {
+        guard let rendered else { return }
+        UIPasteboard.general.image = rendered
+        copied = true
+        UIAccessibility.post(notification: .announcement, argument: "Copied")
+        revertTask?.cancel()
+        revertTask = Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            if !Task.isCancelled { copied = false }
+        }
+    }
+
+    /// Rendering waits for a pause in typing; a PNG per keystroke is wasted work.
+    private func scheduleRender() {
+        renderTask?.cancel()
+        renderTask = Task {
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            if !Task.isCancelled { rendered = render() }
+        }
     }
 
     /// The message as a PNG at 2×, in the theme's colours, wrapped to a chat's width.
     @MainActor
     private func render() -> UIImage? {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return nil }
+        guard !text.isEmpty else { renderFailed = false; return nil }
         let view = Text(text)
             .font(PracticeTheme.script(56)).lineSpacing(10)
-            .foregroundStyle(PracticeTheme.ink)
+            .foregroundStyle(Color.Signal.label)
             .padding(40)
             .frame(width: 900, alignment: .leading)
-            .background(PracticeTheme.paper)
+            .background(Color.Signal.background)
             .environment(\.colorScheme, scheme)
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2
-        return renderer.uiImage
+        let image = renderer.uiImage
+        renderFailed = image == nil
+        return image
     }
 }
 
@@ -75,189 +138,254 @@ struct WriteView: View {
 
 @available(iOS 16, *)
 struct ProgressTabView: View {
+    /// Pops back to the race, from the empty state.
+    var race: () -> Void = {}
+    /// Pushes Recall, from the empty state.
+    var recall: () -> Void = {}
+
     @ObservedObject private var store = PracticeStore.shared
+    @State private var blocks: [String] = QiulingFonts.shared.blocks
+    @State private var detail: String?
     @State private var confirmReset = false
+    @ScaledMetric(relativeTo: .title) private var rowGlyph: CGFloat = 30
+
+    private struct Mark: Identifiable { let text: String; var id: String { text } }
 
     var body: some View {
         let sessions = store.book.sessions
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text(sessions.isEmpty ? "Race once and this fills in." : "\(sessions.count) runs · best \(store.best) wpm")
-                    .font(.footnote).foregroundStyle(PracticeTheme.muted).padding(.horizontal, 20).padding(.top, 8)
-                if !sessions.isEmpty {
-                    HStack(alignment: .firstTextBaseline, spacing: 28) {
-                        big("\(sessions.last!.wpm)", "last wpm")
-                        big("\(store.best)", "best")
-                        big("\(Int(Double(sessions.suffix(10).map(\.accuracy).reduce(0, +)) / Double(min(10, sessions.count)).rounded()))", "accuracy, last 10", small: true)
-                    }
-                    .padding(.horizontal, 20)
-
-                    if #available(iOS 16, *) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("words per minute").practiceLabel()
-                            Chart(Array(sessions.suffix(60).enumerated()), id: \.offset) { i, s in
-                                PointMark(x: .value("run", i), y: .value("wpm", s.wpm)).foregroundStyle(s.wpm >= store.best ? PracticeTheme.good : PracticeTheme.faint).symbolSize(28)
-                                LineMark(x: .value("run", i), y: .value("wpm", trend(sessions.suffix(60), at: i))).foregroundStyle(PracticeTheme.ink).lineStyle(StrokeStyle(lineWidth: 2)).interpolationMethod(.monotone)
-                            }
-                            .chartXAxis(.hidden)
-                            .chartYAxis { AxisMarks(position: .leading) { AxisGridLine().foregroundStyle(PracticeTheme.line); AxisValueLabel().font(.system(size: 9, design: .monospaced)).foregroundStyle(PracticeTheme.muted) } }
-                            .frame(height: 160)
+        let hasRecall = !store.book.recall.isEmpty
+        Group {
+            if sessions.isEmpty, !hasRecall {
+                empty.transition(.opacity)
+            } else {
+                SignalList {
+                    if sessions.isEmpty {
+                        SignalSection {
+                            EmptyView()
+                        } footer: {
+                            Text("No races yet. Finish a race and your speed shows up here.")
                         }
-                        .padding(18).practiceCard().padding(.horizontal, 16)
+                    } else {
+                        typing(sessions)
+                        recent(sessions)
+                        misread
                     }
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("recent runs").practiceLabel()
-                        ForEach(sessions.suffix(8).reversed()) { s in
-                            HStack {
-                                Text(s.date, format: .dateTime.month(.abbreviated).day().hour().minute()).font(PracticeTheme.mono).foregroundStyle(PracticeTheme.muted)
-                                Text(s.mode).font(PracticeTheme.mono).foregroundStyle(PracticeTheme.faint)
-                                Spacer()
-                                Text("\(s.seconds)s").font(PracticeTheme.mono).foregroundStyle(PracticeTheme.muted)
-                                Text("\(s.wpm) wpm").font(PracticeTheme.mono).foregroundStyle(PracticeTheme.ink).frame(width: 64, alignment: .trailing)
-                                Text("\(s.accuracy)%").font(PracticeTheme.mono).foregroundStyle(PracticeTheme.muted).frame(width: 44, alignment: .trailing)
-                            }
-                        }
-                    }
-                    .padding(18).practiceCard().padding(.horizontal, 16)
+                    RecallProgressSections(book: store.book, blocks: blocks, detail: $detail)
 
-                    let hard = store.hardest()
-                    if !hard.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("marks you get wrong most").practiceLabel()
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 10) {
-                                ForEach(hard.prefix(12), id: \.text) { m in
-                                    VStack(spacing: 4) {
-                                        Text(m.text).font(PracticeTheme.script(30))
-                                        Text(m.text).font(.system(size: 10, design: .monospaced)).foregroundStyle(PracticeTheme.muted)
-                                        Text("\(m.record.wrong)/\(m.record.seen)").font(.system(size: 10, design: .monospaced)).foregroundStyle(PracticeTheme.accent)
-                                    }
-                                    .frame(maxWidth: .infinity).padding(.vertical, 10)
-                                    .background(PracticeTheme.paper, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                }
-                            }
+                    SignalSection {
+                        Button(role: .destructive) { confirmReset = true } label: {
+                            Text("Reset progress").font(.body).foregroundStyle(Color.Signal.red).frame(maxWidth: .infinity)
                         }
-                        .padding(18).practiceCard().padding(.horizontal, 16)
+                    } footer: {
+                        Text("Removes every race and recall record for this alphabet.")
                     }
                 }
+                .confirmationDialog("Reset all progress?", isPresented: $confirmReset, titleVisibility: .visible) {
+                    Button("Reset progress", role: .destructive) { withAnimation { store.reset() } }
+                } message: {
+                    Text("Every race and recall record for this alphabet will be removed. This can't be undone.")
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.default, value: sessions.isEmpty && !hasRecall)
+        .background(Color.Signal.groupedBackground)
+        .sheet(item: Binding(get: { detail.map(Mark.init) }, set: { detail = $0?.text })) { m in
+            RecallMarkDetail(mark: m.text, item: store.book.recall[m.text])
+        }
+        .onReceive(NotificationCenter.default.publisher(for: QiulingFonts.fontDidChange)) { _ in blocks = QiulingFonts.shared.blocks }
+    }
 
-                RecallProgressSection(book: store.book)
+    // MARK: Empty
 
-                if !sessions.isEmpty || !store.book.recall.isEmpty {
-                    Button("Reset this alphabet", systemImage: "trash", role: .destructive) { confirmReset = true }.practiceSecondaryButton().padding(.horizontal, 20)
-                        .confirmationDialog("Forget every run, mark and recall box for \(QiulingFonts.buildId)?", isPresented: $confirmReset, titleVisibility: .visible) {
-                            Button("Reset", role: .destructive) { store.reset() }
-                        }
+    private var empty: some View {
+        VStack(spacing: 20) {
+            if #available(iOS 17, *) {
+                ContentUnavailableView("No progress yet", systemImage: "chart.line.uptrend.xyaxis", description: Text("Finish a race or answer a few recall cards and your numbers show up here."))
+            } else {
+                VStack(spacing: 8) {
+                    Image(systemName: "chart.line.uptrend.xyaxis").font(.largeTitle).foregroundStyle(.secondary)
+                    Text("No progress yet").font(.title3.weight(.semibold))
+                    Text("Finish a race or answer a few recall cards and your numbers show up here.").font(.body).foregroundStyle(.secondary)
+                }
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            }
+            HStack(spacing: 12) {
+                Button("Race") { race() }.practicePrimaryButton()
+                Button("Recall") { recall() }.practiceSecondaryButton()
+            }
+            .controlSize(.large)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: Typing
+
+    private func typing(_ sessions: [PracticeStore.Session]) -> some View {
+        let last = sessions.last!
+        let accuracy = Int((Double(sessions.suffix(10).map(\.accuracy).reduce(0, +)) / Double(min(10, sessions.count))).rounded())
+        let recent = Array(sessions.suffix(60))
+        return SignalSection {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 12) { typingTiles(last: last.wpm, accuracy: accuracy) }
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) { typingTiles(last: last.wpm, accuracy: accuracy) }
+            }
+            .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
+
+            Chart {
+                ForEach(Array(recent.enumerated()), id: \.element.id) { i, s in
+                    PointMark(x: .value("Race", i), y: .value("Words per minute", s.wpm))
+                        .foregroundStyle(s.wpm >= store.best ? PracticeTheme.good : Color.Signal.tertiaryLabel)
+                        .symbolSize(28)
+                    if recent.count >= 3 {
+                        LineMark(x: .value("Race", i), y: .value("Words per minute", trend(recent, at: i)))
+                            .foregroundStyle(Color.Signal.label)
+                            .lineStyle(StrokeStyle(lineWidth: 2))
+                            .interpolationMethod(.monotone)
+                    }
                 }
             }
-            .padding(.bottom, 24)
+            .chartXAxis(.hidden)
+            .chartYAxis {
+                AxisMarks(position: .leading) {
+                    AxisGridLine().foregroundStyle(Color.Signal.quaternaryFill)
+                    AxisValueLabel().font(.caption2.monospacedDigit()).foregroundStyle(Color.Signal.secondaryLabel)
+                }
+            }
+            .frame(height: 160)
+            .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
+            .accessibilityLabel("Words per minute across your last \(recent.count) races, best \(store.best)")
+        } header: {
+            Text("Typing")
+        } footer: {
+            Text("Each dot is a race and the green dot is your best. Accuracy is your average over the last 10 races.")
         }
     }
 
-    private func trend(_ s: ArraySlice<PracticeStore.Session>, at i: Int) -> Double {
-        let arr = Array(s); let lo = max(0, i - 4), hi = min(arr.count - 1, i + 4)
-        let w = arr[lo...hi].map(\.wpm); return Double(w.reduce(0, +)) / Double(w.count)
+    @ViewBuilder
+    private func typingTiles(last: Int, accuracy: Int) -> some View {
+        statTile("\(last) wpm", "Last race", spoken: "Last race, \(last) words per minute")
+        statTile("\(store.best) wpm", "Best", spoken: "Best, \(store.best) words per minute")
+        statTile("\(accuracy)%", "Accuracy", spoken: "Accuracy, \(accuracy) percent")
     }
 
-    private func big(_ value: String, _ label: String, small: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(value).font(.system(size: small ? 24 : 44, weight: .semibold, design: .monospaced)).monospacedDigit().foregroundStyle(small ? PracticeTheme.muted : PracticeTheme.ink)
-            Text(label).practiceLabel()
+    private func statTile(_ value: String, _ caption: String, spoken: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value).font(.system(.title, design: .rounded, weight: .semibold)).monospacedDigit()
+            Text(caption).font(.footnote).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
+    }
+
+    /// A centred nine-race average, so the line says where you are going
+    /// rather than how the last race went.
+    private func trend(_ s: [PracticeStore.Session], at i: Int) -> Double {
+        let lo = max(0, i - 4), hi = min(s.count - 1, i + 4)
+        let w = s[lo...hi].map(\.wpm); return Double(w.reduce(0, +)) / Double(w.count)
+    }
+
+    private func recent(_ sessions: [PracticeStore.Session]) -> some View {
+        SignalSection {
+            ForEach(sessions.suffix(8).reversed()) { s in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(s.date, format: .dateTime.month(.abbreviated).day().hour().minute()).font(.body)
+                        Text("\(s.mode.capitalized) · \(PracticeFormat.duration(s.seconds))").font(.footnote).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\(s.wpm) wpm").font(.body.monospacedDigit())
+                        Text("\(s.accuracy)%").font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        } header: {
+            Text("Recent races")
+        }
+    }
+
+    @ViewBuilder
+    private var misread: some View {
+        let hard = store.hardest()
+        if !hard.isEmpty {
+            SignalSection {
+                ForEach(hard.prefix(8), id: \.text) { m in
+                    HStack(spacing: 12) {
+                        Text(m.text).font(PracticeTheme.script(rowGlyph)).frame(width: 56, alignment: .leading)
+                        Text(m.text).font(.system(.body, design: .monospaced))
+                        Spacer()
+                        Text("\(m.record.wrong) of \(m.record.seen) times").font(.subheadline.monospacedDigit()).foregroundStyle(PracticeTheme.wrong)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(PracticeFormat.spelled(m.text)), misread \(m.record.wrong) of \(m.record.seen) times")
+                }
+            } header: {
+                Text("Often misread")
+            }
         }
     }
 }
 
 // MARK: - Read the web
 
-/// The Safari bookmark that sets any page in the script, with the current
-/// font carried inside it. A port of the trainer's `reader.js`.
+/// How to read any page in Qiuling: the Safari extension does the work, and
+/// this page only says where its switch is.
 @available(iOS 16, *)
 struct ReadWebView: View {
-    @State private var status = ""
-
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("A Safari bookmark that sets any page in the script, at twice its size. Tap it again to put the page back.")
-                    .font(.footnote).foregroundStyle(PracticeTheme.muted).padding(.horizontal, 20).padding(.top, 8)
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("1. Copy the bookmark link below.\n2. In Safari, bookmark any page (share sheet → Add Bookmark).\n3. Bookmarks → Edit → choose it → paste the link over its address.\n4. From then on, tap it in Bookmarks while on any page.")
-                        .font(.system(size: 14)).foregroundStyle(PracticeTheme.ink).lineSpacing(4)
-                    Text("The font travels inside the bookmark, so nothing is installed or fetched, and it carries whatever alphabet this app currently has.")
-                        .font(.system(size: 13)).foregroundStyle(PracticeTheme.muted)
-                    HStack {
-                        Button("Copy bookmark link", systemImage: "link") {
-                            if let link = Self.bookmarklet() {
-                                UIPasteboard.general.setValue(link, forPasteboardType: UTType.plainText.identifier)
-                                status = "copied (\(link.count / 1024) KB)"
-                            } else { status = "no font available" }
-                        }.practicePrimaryButton()
-                        Text(status).font(.system(size: 11, design: .monospaced)).foregroundStyle(PracticeTheme.muted)
+        SignalList {
+            SignalSection {
+                VStack(spacing: 12) {
+                    ZStack {
+                        Circle().fill(Color.Signal.secondaryFill).frame(width: 64, height: 64)
+                        Image(systemName: "safari").font(.system(size: 28)).foregroundStyle(Color.Signal.label)
                     }
+                    .accessibilityHidden(true)
+                    Text("Read the web in Qiuling").font(.title3.weight(.semibold))
+                    Text("Qiuling adds a button to Safari. Tap it to set the page you're reading in your script, and tap it again to put the page back.")
+                        .font(.body).foregroundStyle(.secondary)
                 }
-                .padding(18).practiceCard().padding(.horizontal, 16)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .listRowInsets(EdgeInsets(top: 24, leading: 16, bottom: 24, trailing: 16))
+                .listRowBackground(Color.clear)
+            }
+
+            SignalSection {
+                step(1, "Open Settings, then Apps, then Safari, then Extensions.")
+                step(2, "Turn on Qiuling.")
+                step(3, "Choose Allow for all websites, or Ask each time.")
+                Button("Open Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                }
+                .font(.body)
+                .foregroundStyle(Color.Signal.accent)
+            } header: {
+                Text("Turn it on once")
+            } footer: {
+                Text("Open Settings lands on Qiuling's own page; Safari's extensions are two taps further. You can also turn it on in Safari: tap the page menu in the address bar, choose Manage Extensions, then Qiuling.")
+            }
+
+            SignalSection {
+                step(1, "In Safari, tap the page menu in the address bar, then Qiuling. The page switches to your script.")
+                step(2, "Tap it again to switch back.")
+            } header: {
+                Text("Read a page")
+            } footer: {
+                Text("The extension reads with the same alphabet as this app and works offline.")
             }
         }
     }
 
-    private static let keep = ":is(svg, code, pre, kbd, samp, tt, input, textarea, select, option, [contenteditable], .material-icons, .material-icons-outlined, .material-symbols-outlined, [class^=\"fa-\"], [class*=\" fa-\"], .fa, .fas, .far, .fab, .glyphicon, .icon, i[class*=\"icon\"], span[class*=\"icon\"])"
-
-    // The in-page routine, verbatim from web/reader.js.
-    private static let apply = """
-    function qiulingApply(id, css, keep, scale, on) {
-      var W = window, style = document.getElementById(id);
-      if (!on) {
-        if (style) style.remove();
-        var undo = W.__qiulingUndo || [];
-        for (var i = 0; i < undo.length; i++) {
-          var u = undo[i];
-          for (var p in u.prev) {
-            if (u.prev[p][0]) u.el.style.setProperty(p, u.prev[p][0], u.prev[p][1]);
-            else u.el.style.removeProperty(p);
-          }
-          if (!u.el.getAttribute('style')) u.el.removeAttribute('style');
+    private func step(_ n: Int, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: "\(n).circle.fill").foregroundStyle(Color.Signal.accent).imageScale(.large)
+                .accessibilityHidden(true)
+            Text(text).font(.body)
         }
-        delete W.__qiulingUndo;
-        return false;
-      }
-      if (style) return true;
-      var els = document.querySelectorAll('body, body *'), snap = [];
-      for (var j = 0; j < els.length; j++) {
-        var e = els[j];
-        if (e.closest(keep)) continue;
-        var cs = getComputedStyle(e);
-        snap.push([e, parseFloat(cs.fontSize), cs.lineHeight]);
-      }
-      var log = [];
-      for (var k = 0; k < snap.length; k++) {
-        var el = snap[k][0], prev = {};
-        var set = function (prop, value) {
-          prev[prop] = [el.style.getPropertyValue(prop), el.style.getPropertyPriority(prop)];
-          el.style.setProperty(prop, value, 'important');
-        };
-        if (snap[k][1] > 0) set('font-size', snap[k][1] * scale + 'px');
-        if (/px$/.test(snap[k][2])) set('line-height', parseFloat(snap[k][2]) * scale + 'px');
-        log.push({ el: el, prev: prev });
-      }
-      W.__qiulingUndo = log;
-      style = document.createElement('style');
-      style.id = id;
-      style.textContent = css;
-      (document.head || document.documentElement).appendChild(style);
-      return true;
-    }
-    """
-
-    static func bookmarklet() -> String? {
-        guard let data = QiulingFonts.shared.currentFontData() else { return nil }
-        let css = """
-        @font-face { font-family: "Qiuling Reader"; src: url("data:font/ttf;base64,\(data.base64EncodedString())") format("truetype"); font-display: block; }
-        html body, html body *:not(\(keep)):not(\(keep) *) { font-family: "Qiuling Reader", system-ui, sans-serif !important; letter-spacing: normal !important; }
-        """
-        func js(_ s: String) -> String { String(data: try! JSONEncoder().encode(s), encoding: .utf8)! }
-        let id = "qiuling-reader-style"
-        let src = "(\(apply))(\(js(id)), \(js(css)), \(js(keep)), 2, !document.getElementById(\(js(id))));"
-        var allowed = CharacterSet.alphanumerics; allowed.insert(charactersIn: "-_.!~*'()")
-        return "javascript:" + (src.addingPercentEncoding(withAllowedCharacters: allowed) ?? src)
     }
 }

@@ -205,6 +205,14 @@ class AppSettingsViewController: OWSTableViewController2 {
             },
         ))
         section2.add(.disclosureItem(
+            icon: .settingsQiuling,
+            withText: "Qiuling",
+            actionBlock: { [weak self] in
+                let vc = QiulingSettingsViewController()
+                self?.navigationController?.pushViewController(vc, animated: true)
+            },
+        ))
+        section2.add(.disclosureItem(
             icon: .settingsChats,
             withText: OWSLocalizedString("SETTINGS_CHATS", comment: "Title for the 'chats' link in settings."),
             actionBlock: { [weak self] in

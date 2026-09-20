@@ -8,7 +8,7 @@ import SwiftUI
 
 // MARK: - Model
 
-/// One sitting at the flash cards. The store keeps the boxes; this keeps the
+/// One sitting at the flash cards. The store keeps the levels; this keeps the
 /// card on screen, the clock behind it and the running score for the sitting.
 @available(iOS 16, *)
 @MainActor
@@ -24,13 +24,13 @@ final class RecallModel: ObservableObject {
     @AppStorage("Practice.recallMode") private var modeRaw = Recall.Mode.both.rawValue
     var mode: Recall.Mode {
         get { Recall.Mode(rawValue: modeRaw) ?? .both }
-        set { modeRaw = newValue.rawValue; next() }
+        set { modeRaw = newValue.rawValue; objectWillChange.send(); next() }
     }
 
     @Published private(set) var card: Card?
     @Published private(set) var seen = 0
     @Published private(set) var hit = 0
-    private(set) var blocks = QiulingFonts.shared.blocks
+    @Published private(set) var blocks = QiulingFonts.shared.blocks
     private var recent: [String] = []
     private var shownAt = Date()
     private var advance: Task<Void, Never>?
@@ -63,103 +63,172 @@ final class RecallModel: ObservableObject {
             if !Task.isCancelled { self?.next() }
         }
     }
+
+    /// "7 of 9 right"; empty before the first answer.
+    var score: String { seen > 0 ? "\(hit) of \(seen) right" : "" }
+}
+
+@available(iOS 16, *)
+extension Recall.Mode {
+    var title: String {
+        switch self { case .both: "Both directions"; case .read: "Read the mark"; case .write: "Write the mark" }
+    }
 }
 
 // MARK: - Screen
 
-/// Duolingo-shaped: the prompt large in the upper half, the four answers in
-/// a grid pinned to the bottom where a thumb already is.
+/// The prompt large in the upper half, the four answers in a grid pinned to
+/// the bottom where a thumb already is. The direction lives in the bar, set
+/// up by the hosting controller.
 @available(iOS 16, *)
 struct RecallView: View {
-    @StateObject private var model = RecallModel()
+    @ObservedObject var model: RecallModel
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .largeTitle) private var markSize: CGFloat = 112
+    @ScaledMetric(relativeTo: .title) private var optionMarkSize: CGFloat = 50
+    @ScaledMetric(relativeTo: .subheadline) private var feedbackMarkSize: CGFloat = 28
+    @ScaledMetric(relativeTo: .subheadline) private var feedbackHeight: CGFloat = 44
 
     var body: some View {
         VStack(spacing: 0) {
             if let c = model.card {
+                if #unavailable(iOS 26) {
+                    Text(model.score)
+                        .font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+                        .animation(.default, value: model.seen)
+                        .frame(maxWidth: .infinity, minHeight: 20)
+                        .padding(.top, 8)
+                        .opacity(model.seen > 0 ? 1 : 0)
+                        .accessibilityHidden(model.seen == 0)
+                }
                 prompt(c)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                controls
+                feedback(c)
+                    .frame(maxWidth: .infinity, minHeight: feedbackHeight)
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 10)
-                note(c)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 10)
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    ForEach(c.options, id: \.self) { o in
-                        Button { model.pick(o) } label: {
-                            answerLabel(o, c.direction)
-                                .frame(maxWidth: .infinity, minHeight: 56)
-                                .padding(.vertical, 12)
-                                .contentShape(Rectangle())
-                        }
-                        .optionButton(tint: tint(o, c))
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
-                .animation(.snappy, value: c.picked)
             } else {
-                Text("This alphabet has no marks to drill.")
-                    .font(.footnote).foregroundStyle(PracticeTheme.muted)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                empty
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.Signal.groupedBackground)
+        .safeAreaInset(edge: .bottom) {
+            if let c = model.card { answers(c) }
         }
         .onAppear { if model.card == nil { model.next() } }
     }
 
-    private func prompt(_ c: RecallModel.Card) -> some View {
-        VStack(spacing: 14) {
-            if c.direction == .read {
-                Text(c.mark).font(PracticeTheme.script(112)).foregroundStyle(PracticeTheme.ink)
-            } else {
-                Text(c.mark).font(.system(size: 48, weight: .semibold, design: .monospaced)).kerning(4).foregroundStyle(PracticeTheme.ink)
+    @ViewBuilder
+    private var empty: some View {
+        if #available(iOS 17, *) {
+            ContentUnavailableView("No marks to practice", systemImage: "rectangle.stack", description: Text("This alphabet has nothing to drill yet."))
+        } else {
+            VStack(spacing: 8) {
+                Image(systemName: "rectangle.stack").font(.largeTitle).foregroundStyle(.secondary)
+                Text("No marks to practice").font(.title3.weight(.semibold))
+                Text("This alphabet has nothing to drill yet.").font(.body).foregroundStyle(.secondary)
             }
-            Text(c.direction.caption).font(.footnote).foregroundStyle(PracticeTheme.muted)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func prompt(_ c: RecallModel.Card) -> some View {
+        VStack(spacing: 12) {
+            if c.direction == .read {
+                Text(c.mark)
+                    .font(PracticeTheme.script(markSize))
+                    .minimumScaleFactor(0.5)
+                    .foregroundStyle(Color.Signal.label)
+                    .accessibilityLabel("Mark")
+            } else {
+                Text(c.mark)
+                    .font(.system(.largeTitle, design: .monospaced, weight: .semibold))
+                    .kerning(4)
+                    .minimumScaleFactor(0.5)
+                    .foregroundStyle(Color.Signal.label)
+                    .accessibilityLabel(PracticeFormat.spelled(c.mark))
+            }
+            Text(c.direction == .read ? "What does this say?" : "Which mark spells this?")
+                .font(.subheadline).foregroundStyle(.secondary)
         }
         .padding(.horizontal, 20)
-        .minimumScaleFactor(0.5)
+        .contentTransition(.opacity)
+        .animation(.easeInOut(duration: 0.15), value: c.mark)
     }
 
-    private var controls: some View {
-        HStack(spacing: 12) {
-            Text("\(model.hit) / \(model.seen)").font(PracticeTheme.mono).monospacedDigit().foregroundStyle(PracticeTheme.muted)
-            Picker("Direction", selection: Binding(get: { model.mode }, set: { model.mode = $0 })) {
-                ForEach(Recall.Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+    /// Kept in the layout even when empty so the grid does not jump when a
+    /// wrong answer lands.
+    @ViewBuilder
+    private func feedback(_ c: RecallModel.Card) -> some View {
+        if let picked = c.picked, picked != c.mark {
+            Group {
+                if c.direction == .read {
+                    Text("You picked \(picked). It was \(c.mark).")
+                } else {
+                    Text("You picked ") + Text(picked).font(PracticeTheme.script(feedbackMarkSize))
+                        + Text(". It was ") + Text(c.mark).font(PracticeTheme.script(feedbackMarkSize)) + Text(".")
+                }
             }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 220)
-            Button("Skip", systemImage: "forward") { model.next() }.labelStyle(.iconOnly).practiceSecondaryButton()
+            .font(.subheadline)
+            .foregroundStyle(PracticeTheme.wrong)
+            .multilineTextAlignment(.center)
+            .accessibilityLabel("You picked \(PracticeFormat.spelled(picked)). It was \(PracticeFormat.spelled(c.mark)).")
         }
     }
 
-    /// One line under the controls, kept in the layout even when empty so
-    /// the grid does not jump when a wrong answer lands.
-    private func note(_ c: RecallModel.Card) -> some View {
-        Group {
-            if let picked = c.picked, picked != c.mark {
-                Text("you picked \(picked) — it was \(c.mark)")
-            } else {
-                Text(" ")
+    private func answers(_ c: RecallModel.Card) -> some View {
+        let columns = typeSize >= .accessibility3 ? 1 : 2
+        return VStack(spacing: 0) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: columns), spacing: 12) {
+                ForEach(c.options, id: \.self) { o in
+                    Button { model.pick(o) } label: {
+                        answerLabel(o, c.direction)
+                            .frame(maxWidth: .infinity, minHeight: 72)
+                            .contentShape(Rectangle())
+                    }
+                    .optionButton(tint: tint(o, c))
+                    .accessibilityLabel(answerSpoken(o, c))
+                }
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .animation(.snappy, value: c.picked)
+            Button("Skip") { model.next() }
+                .buttonStyle(.borderless)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.bottom, 8)
         }
-        .font(.system(size: 13, design: .monospaced)).foregroundStyle(PracticeTheme.accent)
-        .lineLimit(1).minimumScaleFactor(0.7)
+        .frame(maxWidth: 560)
+        .frame(maxWidth: .infinity)
+        .practiceHaptic(trigger: c.picked) { _, new in new.map { $0 == c.mark } }
     }
 
     @ViewBuilder
     private func answerLabel(_ o: String, _ d: Recall.Direction) -> some View {
         if d == .read {
-            Text(o).font(.system(size: 22, weight: .semibold, design: .monospaced)).kerning(2)
+            Text(o).font(.title3.monospaced().weight(.semibold)).kerning(2)
         } else {
-            Text(o).font(PracticeTheme.script(50))
+            Text(o).font(PracticeTheme.script(optionMarkSize))
         }
+    }
+
+    private func answerSpoken(_ o: String, _ c: RecallModel.Card) -> String {
+        var label = PracticeFormat.spelled(o)
+        if c.picked != nil {
+            if o == c.mark { label += ", correct" } else if o == c.picked { label += ", incorrect" }
+        }
+        return label
     }
 
     /// Neutral until an answer lands; then the answer goes green and a wrong pick red.
     private func tint(_ o: String, _ c: RecallModel.Card) -> Color? {
         guard let picked = c.picked else { return nil }
         if o == c.mark { return PracticeTheme.good }
-        if o == picked { return PracticeTheme.accent }
+        if o == picked { return PracticeTheme.wrong }
         return nil
     }
 }
@@ -170,25 +239,28 @@ private extension View {
     @ViewBuilder
     func optionButton(tint: Color?) -> some View {
         if #available(iOS 26, *) {
-            if let tint { self.buttonStyle(.glassProminent).tint(tint) } else { self.buttonStyle(.glass).tint(PracticeTheme.ink) }
+            if let tint { self.buttonStyle(.glassProminent).tint(tint) } else { self.buttonStyle(.glass).tint(Color.Signal.label) }
         } else {
-            if let tint { self.buttonStyle(.borderedProminent).tint(tint) } else { self.buttonStyle(.bordered).tint(PracticeTheme.ink) }
+            if let tint { self.buttonStyle(.borderedProminent).tint(tint) } else { self.buttonStyle(.bordered).tint(Color.Signal.label) }
         }
     }
 }
 
 // MARK: - Progress
 
-/// Where every mark stands: the four counts, a heat map of the alphabet,
-/// the marks that keep slipping and the ones that are done. Tap a mark for
-/// the numbers behind its colour.
+/// Where every mark stands, as sections of the Progress list: the four
+/// counts and a heat map of the alphabet, the marks that keep slipping and
+/// the ones that are done. Tap a mark for the numbers behind its colour.
 @available(iOS 16, *)
-struct RecallProgressSection: View {
+struct RecallProgressSections: View {
     let book: PracticeStore.Book
-    @State private var blocks: [String] = []
-    @State private var detail: String?
+    let blocks: [String]
+    @Binding var detail: String?
+    @ScaledMetric(relativeTo: .title) private var rowGlyph: CGFloat = 30
+    @ScaledMetric(relativeTo: .body) private var mapGlyph: CGFloat = 24
+    @ScaledMetric(relativeTo: .body) private var chipGlyph: CGFloat = 20
 
-    private struct Row: Identifiable {
+    struct Row: Identifiable {
         let mark: String; let label: Recall.Label; let item: PracticeStore.RecallItem?
         var id: String { mark }
         var seen: Int { (item?.read.seen ?? 0) + (item?.write.seen ?? 0) }
@@ -209,109 +281,113 @@ struct RecallProgressSection: View {
     var body: some View {
         let rows = self.rows
         let counts = Dictionary(grouping: rows, by: \.label).mapValues(\.count)
-        VStack(alignment: .leading, spacing: 20) {
-            if !rows.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("recall").practiceLabel()
-                    HStack(alignment: .firstTextBaseline, spacing: 22) {
-                        ForEach([Recall.Label.mastered, .learning, .struggling, .new], id: \.self) { l in
+        let struggling = rows.filter { $0.label == .struggling }.sorted { ($0.accuracy ?? 0, -$0.seen) < ($1.accuracy ?? 0, -$1.seen) }
+        let mastered = rows.filter { $0.label == .mastered }
+
+        SignalSection {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 12) { countTiles(counts) }
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) { countTiles(counts) }
+            }
+            .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 56), spacing: 6)], spacing: 6) {
+                ForEach(rows) { r in
+                    Button { detail = r.mark } label: {
+                        VStack(spacing: 2) {
+                            Text(r.mark).font(PracticeTheme.script(mapGlyph)).foregroundStyle(Color.Signal.label)
+                            Text(r.mark).font(.system(.caption2, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .padding(.vertical, 6)
+                        .background(PracticeTheme.statusFill(r.label), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(PracticeFormat.spelled(r.mark)), \(r.label.title.lowercased())")
+                }
+            }
+            .listRowInsets(EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12))
+        } header: {
+            Text("Recall")
+        } footer: {
+            Text("Tap a mark to see its record.")
+        }
+
+        if !struggling.isEmpty {
+            SignalSection {
+                ForEach(struggling.prefix(8)) { r in
+                    Button { detail = r.mark } label: {
+                        HStack(spacing: 12) {
+                            Text(r.mark).font(PracticeTheme.script(rowGlyph)).foregroundStyle(Color.Signal.label).frame(width: 56, alignment: .leading)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("\(counts[l] ?? 0)").font(.system(size: 24, weight: .semibold, design: .monospaced)).monospacedDigit().foregroundStyle(PracticeTheme.ink)
-                                Text(l.name).font(.system(size: 10, design: .monospaced)).foregroundStyle(Self.ink(l))
+                                Text(r.mark).font(.system(.body, design: .monospaced)).foregroundStyle(Color.Signal.label)
+                                if let c = r.topConfusion {
+                                    Text("Often picked \(c)").font(.footnote).foregroundStyle(PracticeTheme.wrong)
+                                }
                             }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text("\(r.accuracy ?? 0)%").font(.subheadline.monospacedDigit()).foregroundStyle(PracticeTheme.wrong)
+                                if let ms = r.meanMs {
+                                    Text(PracticeFormat.seconds(ms: ms)).font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+                                }
+                            }
+                            Image(systemName: "chevron.right").foregroundStyle(Color.Signal.tertiaryLabel).imageScale(.small)
                         }
                     }
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 58), spacing: 6)], spacing: 6) {
-                        ForEach(rows) { r in
-                            Button { detail = r.mark } label: {
-                                VStack(spacing: 2) {
-                                    Text(r.mark).font(PracticeTheme.script(26)).foregroundStyle(PracticeTheme.ink)
-                                    Text(r.mark).font(.system(size: 9, design: .monospaced)).foregroundStyle(PracticeTheme.muted).lineLimit(1).minimumScaleFactor(0.6)
-                                }
-                                .frame(maxWidth: .infinity).padding(.vertical, 6)
-                                .background(Self.fill(r.label), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .buttonStyle(.plain)
+                }
+            } header: {
+                Text("Struggling")
+            }
+        }
+
+        if !mastered.isEmpty {
+            SignalSection {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), spacing: 8)], alignment: .leading, spacing: 8) {
+                    ForEach(mastered.prefix(12)) { r in
+                        Button { detail = r.mark } label: {
+                            HStack(spacing: 6) {
+                                Text(r.mark).font(PracticeTheme.script(chipGlyph)).foregroundStyle(Color.Signal.label)
+                                Text(r.mark).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
                             }
-                            .buttonStyle(.plain)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(PracticeTheme.statusFill(.mastered), in: Capsule())
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(PracticeFormat.spelled(r.mark)), mastered")
                     }
                 }
-                .padding(18).practiceCard().padding(.horizontal, 16)
-
-                let struggling = rows.filter { $0.label == .struggling }.sorted { ($0.accuracy ?? 0, -$0.seen) < ($1.accuracy ?? 0, -$1.seen) }
-                if !struggling.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("struggling").practiceLabel()
-                        ForEach(struggling.prefix(8)) { r in
-                            Button { detail = r.mark } label: {
-                                HStack(spacing: 12) {
-                                    Text(r.mark).font(PracticeTheme.script(30)).foregroundStyle(PracticeTheme.ink).frame(width: 80, alignment: .leading)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(r.mark).font(PracticeTheme.mono).foregroundStyle(PracticeTheme.ink)
-                                        if let c = r.topConfusion {
-                                            Text("often picked \(c)").font(.system(size: 11, design: .monospaced)).foregroundStyle(PracticeTheme.accent)
-                                        }
-                                    }
-                                    Spacer()
-                                    VStack(alignment: .trailing, spacing: 2) {
-                                        Text("\(r.accuracy ?? 0)%").font(PracticeTheme.mono).foregroundStyle(PracticeTheme.accent)
-                                        if let ms = r.meanMs { Text("\(ms) ms").font(.system(size: 11, design: .monospaced)).foregroundStyle(PracticeTheme.muted) }
-                                    }
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(18).practiceCard().padding(.horizontal, 16)
-                }
-
-                let mastered = rows.filter { $0.label == .mastered }
-                if !mastered.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("mastered").practiceLabel()
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 8)], spacing: 8) {
-                            ForEach(mastered.prefix(12)) { r in
-                                Button { detail = r.mark } label: {
-                                    HStack(spacing: 6) {
-                                        Text(r.mark).font(PracticeTheme.script(20)).foregroundStyle(PracticeTheme.ink)
-                                        Text(r.mark).font(.system(size: 10, design: .monospaced)).foregroundStyle(PracticeTheme.muted).lineLimit(1)
-                                    }
-                                    .padding(.horizontal, 10).padding(.vertical, 6)
-                                    .background(Self.fill(.mastered), in: Capsule())
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                    .padding(18).practiceCard().padding(.horizontal, 16)
+                .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
+            } header: {
+                Text("Mastered")
+            } footer: {
+                if mastered.count > 12 {
+                    Text("And \(mastered.count - 12) more. All are in the map above.")
+                } else {
+                    Text("Marks you get right every time, in both directions.")
                 }
             }
         }
-        .onAppear { if blocks.isEmpty { blocks = QiulingFonts.shared.blocks } }
-        .sheet(item: Binding(get: { detail.map(Mark.init) }, set: { detail = $0?.text })) { m in
-            RecallMarkDetail(mark: m.text, item: book.recall[m.text])
-        }
     }
 
-    private struct Mark: Identifiable { let text: String; var id: String { text } }
-
-    static func fill(_ l: Recall.Label) -> Color {
-        switch l {
-        case .new: PracticeTheme.paper
-        case .struggling: PracticeTheme.accent.opacity(0.18)
-        case .learning: Color.orange.opacity(0.18)
-        case .mastered: PracticeTheme.good.opacity(0.22)
-        }
-    }
-
-    static func ink(_ l: Recall.Label) -> Color {
-        switch l {
-        case .new: PracticeTheme.muted
-        case .struggling: PracticeTheme.accent
-        case .learning: Color.orange
-        case .mastered: PracticeTheme.good
+    @ViewBuilder
+    private func countTiles(_ counts: [Recall.Label: Int]) -> some View {
+        ForEach([Recall.Label.mastered, .learning, .struggling, .new], id: \.self) { l in
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(counts[l] ?? 0)")
+                    .font(.system(.title2, design: .rounded, weight: .semibold)).monospacedDigit()
+                    .foregroundStyle(Color.Signal.label)
+                Text(l.title).font(.footnote).foregroundStyle(PracticeTheme.statusColor(l))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(counts[l] ?? 0) \(l.title.lowercased())")
         }
     }
 }
+
+// MARK: - Mark detail
 
 /// The numbers behind one mark, each direction on its own.
 @available(iOS 16, *)
@@ -319,67 +395,82 @@ struct RecallMarkDetail: View {
     let mark: String
     let item: PracticeStore.RecallItem?
     @Environment(\.dismiss) private var dismiss
+    @ScaledMetric(relativeTo: .largeTitle) private var heroGlyph: CGFloat = 88
+    @ScaledMetric(relativeTo: .body) private var rowGlyph: CGFloat = 24
+
+    private var label: Recall.Label { Recall.label(item) }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+            SignalList(presented: true) {
+                SignalSection {
                     VStack(spacing: 8) {
-                        Text(mark).font(PracticeTheme.script(88)).foregroundStyle(PracticeTheme.ink)
-                        Text(mark).font(.system(size: 20, weight: .semibold, design: .monospaced)).kerning(3).foregroundStyle(PracticeTheme.muted)
-                        Text(Recall.label(item).name).font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(RecallProgressSection.ink(Recall.label(item)))
+                        Text(mark).font(PracticeTheme.script(heroGlyph)).foregroundStyle(Color.Signal.label)
+                        Text(mark).font(.title3.monospaced().weight(.semibold)).kerning(3).foregroundStyle(.secondary)
+                        Text(label.title)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(PracticeTheme.statusColor(label))
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(PracticeTheme.statusFill(label), in: Capsule())
                     }
-                    .frame(maxWidth: .infinity).padding(.vertical, 20).practiceCard().padding(.horizontal, 16)
-                    ForEach(Recall.Direction.allCases, id: \.self) { d in
-                        direction(d, item?[d] ?? .init())
-                    }
+                    .frame(maxWidth: .infinity)
+                    .listRowBackground(Color.clear)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(PracticeFormat.spelled(mark)), \(label.title.lowercased())")
                 }
-                .padding(.top, 8)
+
+                direction(.read, item?.read ?? .init(), header: "Reading the mark", footer: "You see the mark and choose its letters.")
+                direction(.write, item?.write ?? .init(), header: "Writing the mark", footer: "You see the letters and choose the mark.")
+
+                SignalSection {
+                    EmptyView()
+                } footer: {
+                    Text("Levels go up one with each right answer and down two with a wrong one. Level 5 is mastered.")
+                }
             }
-            .background(PracticeTheme.paper)
-            .navigationTitle("Recall")
+            .navigationTitle(mark)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
         .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
-    private func direction(_ d: Recall.Direction, _ r: PracticeStore.RecallRecord) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(d.rawValue).practiceLabel()
+    private func direction(_ d: Recall.Direction, _ r: PracticeStore.RecallRecord, header: String, footer: String) -> some View {
+        SignalSection {
             if r.seen == 0 {
-                Text("not yet asked").font(PracticeTheme.mono).foregroundStyle(PracticeTheme.faint)
+                Text("Not asked yet").foregroundStyle(.secondary)
             } else {
-                HStack(alignment: .firstTextBaseline, spacing: 24) {
-                    stat("\(r.box)", "box of 5")
-                    stat("\(r.accuracy ?? 0)%", "\(r.right) of \(r.seen)")
-                    stat(r.msMean.map { "\(Int($0.rounded()))" } ?? "—", "mean ms")
-                    stat("\(r.streak)", "streak")
-                }
+                detailRow("Level", r.box >= 5 ? "Mastered" : "\(r.box) of 5")
+                detailRow("Right", "\(r.right) of \(r.seen)")
+                detailRow("Streak", r.streak > 0 ? "\(r.streak) in a row" : "None yet")
+                if let ms = r.msMean { detailRow("Time to answer", PracticeFormat.seconds(ms: ms)) }
                 let confusions = r.confusions.sorted { $0.value > $1.value || ($0.value == $1.value && $0.key < $1.key) }
                 if !confusions.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("picked instead").font(.system(size: 10, design: .monospaced)).foregroundStyle(PracticeTheme.muted)
-                        ForEach(confusions.prefix(6), id: \.key) { k, v in
-                            HStack(spacing: 10) {
-                                Text(k).font(PracticeTheme.script(24)).foregroundStyle(PracticeTheme.ink).frame(width: 64, alignment: .leading)
-                                Text(k).font(PracticeTheme.mono).foregroundStyle(PracticeTheme.accent)
-                                Spacer()
-                                Text("×\(v)").font(PracticeTheme.mono).foregroundStyle(PracticeTheme.muted)
-                            }
+                    Text("Picked instead").font(.footnote).foregroundStyle(.secondary)
+                    ForEach(confusions.prefix(6), id: \.key) { k, v in
+                        HStack(spacing: 12) {
+                            Text(k).font(PracticeTheme.script(rowGlyph)).foregroundStyle(Color.Signal.label).frame(width: 48, alignment: .leading)
+                            Text(k).font(.system(.body, design: .monospaced)).foregroundStyle(PracticeTheme.wrong)
+                            Spacer()
+                            Text(v == 1 ? "1 time" : "\(v) times").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
                         }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Picked \(PracticeFormat.spelled(k)) \(v == 1 ? "1 time" : "\(v) times")")
                     }
                 }
             }
+        } header: {
+            Text(header)
+        } footer: {
+            Text(footer)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18).practiceCard().padding(.horizontal, 16)
     }
 
-    private func stat(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value).font(.system(size: 22, weight: .semibold, design: .monospaced)).monospacedDigit().foregroundStyle(PracticeTheme.ink)
-            Text(label).font(.system(size: 10, design: .monospaced)).foregroundStyle(PracticeTheme.muted)
+    private func detailRow(_ title: String, _ value: String) -> some View {
+        LabeledContent(title) {
+            Text(value).font(.body.monospacedDigit()).foregroundStyle(.secondary)
         }
+        .font(.body)
     }
 }

@@ -9,14 +9,27 @@ public import SwiftUI
 
 public struct SignalList<Content: View>: View {
     private let sectionSpacing: CGFloat?
+    private let presented: Bool
     private var content: Content
 
+    /// `presented` picks the colours a sheet's table uses, matching
+    /// `OWSTableViewController2` when it is shown modally.
     public init(
         sectionSpacing: CGFloat? = nil,
+        presented: Bool = false,
         @ViewBuilder content: () -> Content,
     ) {
         self.sectionSpacing = sectionSpacing
+        self.presented = presented
         self.content = content()
+    }
+
+    private var rowBackground: Color {
+        presented ? Color(Theme.tableCell2PresentedBackgroundColor) : Color.Signal.secondaryGroupedBackground
+    }
+
+    private var listBackground: Color {
+        presented ? Color(Theme.tableView2PresentedBackgroundColor) : Color.Signal.groupedBackground
     }
 
     @ViewBuilder
@@ -26,7 +39,7 @@ public struct SignalList<Content: View>: View {
         List {
             if #available(iOS 16.0, *) {
                 content
-                    .listRowBackground(Color.Signal.secondaryGroupedBackground)
+                    .listRowBackground(rowBackground)
             } else {
                 content
             }
@@ -40,7 +53,7 @@ public struct SignalList<Content: View>: View {
     private var listWithBackground: some View {
         self.list
             .scrollContentBackground(.hidden)
-            .background(Color.Signal.groupedBackground)
+            .background(listBackground)
     }
 
     public var body: some View {

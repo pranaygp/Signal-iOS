@@ -1,0 +1,10 @@
+{
+  "extension_name": {
+    "message": "Qiuling",
+    "description": "Name of the extension."
+  },
+  "extension_description": {
+    "message": "Set the current page in the Qiuling script. Tap the button to toggle.",
+    "description": "Description of the extension."
+  }
+}

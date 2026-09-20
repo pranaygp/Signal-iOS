@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+import Combine
 import SignalServiceKit
 import SignalUI
 import SwiftUI
@@ -26,7 +27,7 @@ final class PracticeHostViewController: UIHostingController<TypeView>, HomeTabVi
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = Brand.background
+        view.backgroundColor = UIColor.Signal.groupedBackground
 
         if !PracticeOnlyLaunch.isRequested {
             navigationItem.leftBarButtonItem = createSettingsBarButtonItem(
@@ -36,26 +37,34 @@ final class PracticeHostViewController: UIHostingController<TypeView>, HomeTabVi
                     self?.presentFormSheet(AppSettingsViewController.inModalNavigationController(), animated: true)
                 },
             )
+        } else {
+            // Without Signal behind it there is no account to show; the one
+            // settings page that still applies is the alphabet's own.
+            let settings = UIBarButtonItem(image: UIImage(systemName: "gearshape"), primaryAction: UIAction { [weak self] _ in
+                self?.navigationController?.pushViewController(QiulingSettingsViewController(), animated: true)
+            })
+            settings.accessibilityLabel = "Qiuling settings"
+            navigationItem.leftBarButtonItem = settings
         }
 
         let more = UIMenu(children: [
             UIAction(title: "Write a message", image: UIImage(systemName: "square.and.pencil")) { [weak self] _ in
-                self?.push(WriteView(), title: "Write")
+                self?.pushWrite()
             },
-            UIAction(title: "Read the web in Qiuling", image: UIImage(systemName: "safari")) { [weak self] _ in
+            UIAction(title: "Read the web in Safari", image: UIImage(systemName: "safari")) { [weak self] _ in
                 self?.push(ReadWebView(), title: "Read the web")
             },
         ])
-        let recall = UIBarButtonItem(image: UIImage(systemName: "eye"), primaryAction: UIAction { [weak self] _ in
-            self?.push(RecallView(), title: "Recall")
-        })
-        recall.accessibilityLabel = "Recall"
-        let progress = UIBarButtonItem(image: UIImage(systemName: "chart.xyaxis.line"), primaryAction: UIAction { [weak self] _ in
-            self?.push(ProgressTabView(), title: "Progress")
-        })
-        progress.accessibilityLabel = "Progress"
         let moreItem = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), menu: more)
         moreItem.accessibilityLabel = "More"
+        let progress = UIBarButtonItem(image: UIImage(systemName: "chart.line.uptrend.xyaxis"), primaryAction: UIAction { [weak self] _ in
+            self?.pushProgress()
+        })
+        progress.accessibilityLabel = "Progress"
+        let recall = UIBarButtonItem(image: UIImage(systemName: "rectangle.stack"), primaryAction: UIAction { [weak self] _ in
+            self?.pushRecall()
+        })
+        recall.accessibilityLabel = "Recall"
         navigationItem.rightBarButtonItems = [moreItem, progress, recall]
     }
 
@@ -64,14 +73,128 @@ final class PracticeHostViewController: UIHostingController<TypeView>, HomeTabVi
         controller.title = title
         navigationController?.pushViewController(controller, animated: true)
     }
+
+    private func pushRecall() {
+        navigationController?.pushViewController(RecallHostViewController(), animated: true)
+    }
+
+    private func pushWrite() {
+        navigationController?.pushViewController(WriteHostViewController(), animated: true)
+    }
+
+    private func pushProgress() {
+        let progress = ProgressTabView(
+            race: { [weak self] in self?.navigationController?.popToRootViewController(animated: true) },
+            recall: { [weak self] in self?.pushRecall() },
+        )
+        push(progress, title: "Progress")
+    }
 }
 
-/// One pushed section: the paper background behind the SwiftUI content.
+/// One pushed section: the grouped background behind the SwiftUI content.
 @available(iOS 16, *)
 final class PracticeSectionViewController: UIHostingController<AnyView> {
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = Brand.background
+        view.backgroundColor = UIColor.Signal.groupedBackground
+    }
+}
+
+/// Recall, with the direction in the bar and the sitting's score as the
+/// bar's subtitle where the system offers one.
+@available(iOS 16, *)
+final class RecallHostViewController: UIHostingController<RecallView> {
+    private let model = RecallModel()
+    private var cancellables = Set<AnyCancellable>()
+    private lazy var directionItem = UIBarButtonItem(image: UIImage(systemName: "arrow.left.arrow.right"), menu: directionMenu)
+
+    init() {
+        super.init(rootView: RecallView(model: model))
+        title = "Recall"
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = UIColor.Signal.groupedBackground
+        directionItem.accessibilityLabel = "Direction"
+        navigationItem.rightBarButtonItem = directionItem
+
+        model.$blocks
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] blocks in self?.directionItem.isEnabled = !blocks.isEmpty }
+            .store(in: &cancellables)
+        model.$seen.combineLatest(model.$hit)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateSubtitle() }
+            .store(in: &cancellables)
+    }
+
+    /// Built afresh each time it opens, so the check mark follows the choice.
+    private var directionMenu: UIMenu {
+        UIMenu(options: .singleSelection, children: [
+            UIDeferredMenuElement.uncached { [weak self] completion in
+                guard let self else { return completion([]) }
+                completion(Recall.Mode.allCases.map { mode in
+                    UIAction(title: mode.title, state: self.model.mode == mode ? .on : .off) { [weak self] _ in
+                        self?.model.mode = mode
+                    }
+                })
+            },
+        ])
+    }
+
+    private func updateSubtitle() {
+        if #available(iOS 26, *) {
+            navigationItem.subtitle = model.score
+        }
+    }
+}
+
+/// Write, with Clear in the bar. The draft lives in `UserDefaults` under
+/// the view's `@AppStorage` key, so clearing it there is enough. The key
+/// contains a dot, which KVO would read as a key path, so the bar item
+/// follows the defaults-changed notification instead.
+@available(iOS 16, *)
+final class WriteHostViewController: UIHostingController<WriteView> {
+    private lazy var clearItem = UIBarButtonItem(title: "Clear", primaryAction: UIAction { _ in
+        UserDefaults.standard.set("", forKey: WriteView.draftKey)
+    })
+    private var observer: NSObjectProtocol?
+
+    init() {
+        super.init(rootView: WriteView())
+        title = "Write"
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = UIColor.Signal.groupedBackground
+        navigationItem.rightBarButtonItem = clearItem
+        updateClear()
+        observer = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: UserDefaults.standard,
+            queue: .main
+        ) { [weak self] _ in
+            self?.updateClear()
+        }
+    }
+
+    deinit {
+        if let observer {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    private func updateClear() {
+        let draft = UserDefaults.standard.string(forKey: WriteView.draftKey) ?? ""
+        clearItem.isEnabled = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
 
@@ -97,7 +220,7 @@ enum PracticeOnlyLaunch {
         } else {
             window.rootViewController = UIViewController()
         }
-        window.backgroundColor = Brand.background
+        window.backgroundColor = UIColor.Signal.groupedBackground
         window.makeKeyAndVisible()
     }
 }

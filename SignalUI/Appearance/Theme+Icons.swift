@@ -19,6 +19,7 @@ public enum ThemeIcon: UInt {
     case settingsHelp
     case settingsInvite
     case settingsAdvanced
+    case settingsQiuling
 
     case donateManageSubscription
     case donateBadges
@@ -236,6 +237,8 @@ public extension Theme {
             return "invite"
         case .settingsAdvanced:
             return "internal"
+        case .settingsQiuling:
+            return "qiuling"
         // Donate
         case .donateManageSubscription:
             return "person"

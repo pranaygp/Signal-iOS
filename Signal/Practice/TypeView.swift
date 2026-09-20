@@ -15,8 +15,10 @@ import SwiftUI
 @MainActor
 final class RaceModel: ObservableObject {
     enum Source: String, CaseIterable { case sentences, words
-        var label: String { switch self { case .sentences: "sentences"; case .words: "words" } }
+        var label: String { switch self { case .sentences: "Sentences"; case .words: "Words" } }
     }
+
+    static let durations = [15, 30, 60, 120]
 
     @AppStorage("Practice.source") var sourceRaw = Source.sentences.rawValue
     @AppStorage("Practice.seconds") var seconds = 30
@@ -33,8 +35,8 @@ final class RaceModel: ObservableObject {
     private var lastInput = ""
     private var ticker: Timer?
 
-    /// True while keys are landing: the chrome dims.
-    var isTyping: Bool { focused && race?.startedAt != nil && !finished }
+    /// True once the first key has landed and until the clock runs out.
+    var isRunning: Bool { race?.startedAt != nil && !finished }
 
     init() {
         // Earlier builds offered a "your text" source; a saved choice of it
@@ -55,7 +57,7 @@ final class RaceModel: ObservableObject {
     }
 
     func start() {
-        ticker?.invalidate()
+        ticker?.invalidate(); ticker = nil
         finished = false
         input = ""; lastInput = ""
         race = Race(seconds: TimeInterval(seconds), next: nextLine)
@@ -110,20 +112,38 @@ final class RaceModel: ObservableObject {
 struct TypeView: View {
     @ObservedObject var model: RaceModel
     @FocusState private var fieldFocused: Bool
+    /// Results wait one beat after the clock shows 0, so the end of the race
+    /// is seen before the numbers land.
+    @State private var showResults = false
+    @AccessibilityFocusState private var passageFocused: Bool
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                controls
-                if model.finished, let race = model.race {
-                    ResultsView(race: race) { model.start() }
-                } else {
-                    raceArea
+        Group {
+            if showResults, let race = model.race {
+                VStack(spacing: 0) {
+                    header
+                        .padding(.horizontal, OWSTableViewController2.defaultHOuterMargin)
+                        .padding(.vertical, 12)
+                    ResultsView(race: race) { model.start(); passageFocused = true }
                 }
+                .transition(.opacity)
+            } else {
+                ScrollView {
+                    VStack(spacing: 12) {
+                        header
+                        passageCard
+                        stateSlot
+                    }
+                    .padding(.horizontal, OWSTableViewController2.defaultHOuterMargin)
+                    .padding(.top, 12)
+                    .padding(.bottom, 24)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .transition(.opacity)
             }
-            .padding(.bottom, 24)
         }
-        .scrollDismissesKeyboardIfAvailable()
+        .animation(.easeOut(duration: 0.25), value: showResults)
+        .background(Color.Signal.groupedBackground)
         .background {
             // The keyboard's target. Invisible; a tap on the passage focuses it.
             TextField("", text: $model.input)
@@ -137,69 +157,121 @@ struct TypeView: View {
                 .onChange(of: fieldFocused) { model.focused = $0 }
                 .onChange(of: model.focused) { if $0 != fieldFocused { fieldFocused = $0 } }
         }
+        .onChange(of: model.finished) { finished in
+            if finished {
+                Task { try? await Task.sleep(nanoseconds: 400_000_000); if model.finished { showResults = true } }
+            } else {
+                showResults = false
+            }
+        }
     }
 
-    private var controls: some View {
-        VStack(alignment: .leading, spacing: 10) {
+    // MARK: Header
+
+    private var secondsLeft: Int { model.finished ? 0 : Int(model.remaining.rounded(.up)) }
+
+    private var header: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline) {
+                if !showResults { countdown }
+                Spacer()
+                optionsMenu
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                if !showResults { countdown }
+                optionsMenu
+            }
+        }
+    }
+
+    private var countdown: some View {
+        Text("\(secondsLeft)")
+            .font(.system(.largeTitle, design: .rounded, weight: .semibold)).monospacedDigit()
+            .contentTransition(.numericText())
+            .animation(.default, value: secondsLeft)
+            .foregroundStyle(model.isRunning ? Color.Signal.accent : Color.Signal.secondaryLabel)
+            .accessibilityLabel("\(secondsLeft) seconds left")
+    }
+
+    private var optionsMenu: some View {
+        Menu {
             Picker("Passage", selection: Binding(get: { model.source }, set: { model.source = $0; model.start() })) {
                 ForEach(RaceModel.Source.allCases, id: \.self) { Text($0.label).tag($0) }
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.inline)
             Picker("Duration", selection: Binding(get: { model.seconds }, set: { model.seconds = $0; model.start() })) {
-                ForEach([15, 30, 60, 120], id: \.self) { Text("\($0)s").tag($0) }
+                ForEach(RaceModel.durations, id: \.self) { Text(PracticeFormat.durationSpelled($0)).tag($0) }
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.inline)
+            Divider()
+            Button("New passage", systemImage: "arrow.clockwise") { model.start() }
+        } label: {
+            HStack(spacing: 4) {
+                Text("\(model.source.label) · \(PracticeFormat.duration(model.seconds))")
+                Image(systemName: "chevron.up.chevron.down").imageScale(.small)
+            }
+            .font(.subheadline.weight(.medium))
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .practiceSecondaryButton()
+        .controlSize(.small)
+        .disabled(model.race == nil)
+        .accessibilityLabel("Race options")
     }
 
-    private var raceArea: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(String(Int(model.remaining.rounded(.up))))
-                    .font(PracticeTheme.numeral).foregroundStyle(PracticeTheme.accent)
-                Spacer()
-                if let race = model.race, race.startedAt == nil {
-                    Text("tap the passage and type what you read").font(.footnote).foregroundStyle(PracticeTheme.muted)
-                }
-            }
-            .padding(.horizontal, 20)
+    // MARK: Passage
 
-            if let race = model.race {
-                PassageView(race: race, generation: model.generation, focused: model.focused)
-                    .padding(.horizontal, 16)
-                    .contentShape(Rectangle())
-                    .onTapGesture { fieldFocused = true }
-                    .overlay {
-                        if !model.focused {
-                            Text(race.startedAt == nil ? "tap to begin" : "tap to continue")
-                                .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                                .padding(.horizontal, 16).padding(.vertical, 10)
-                                .practiceGlass()
-                                .allowsHitTesting(false)
-                        }
+    @ViewBuilder
+    private var passageCard: some View {
+        if let race = model.race {
+            let dimmed = !model.focused && !model.finished
+            PassageView(race: race, generation: model.generation)
+                .blur(radius: dimmed ? 5 : 0)
+                .opacity(dimmed ? 0.6 : 1)
+                .contentShape(Rectangle())
+                .onTapGesture { fieldFocused = true }
+                .overlay {
+                    if dimmed {
+                        Text(race.startedAt == nil ? "Tap to start" : "Tap to continue")
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 16).padding(.vertical, 10)
+                            .practiceGlass()
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
                     }
-            } else {
-                Text("loading the corpus…").font(.system(size: 13)).foregroundStyle(PracticeTheme.muted).padding(.horizontal, 20)
+                }
+                .animation(.easeOut(duration: 0.15), value: dimmed)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Passage")
+                .accessibilityHint("Double tap, then type what you read.")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityFocused($passageFocused)
+        } else {
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Loading passages…").font(.footnote).foregroundStyle(.secondary)
             }
-
-            HStack {
-                Button("Restart", systemImage: "arrow.counterclockwise") { model.start() }.practiceSecondaryButton()
-                Spacer()
-                Text("\(QiulingFonts.buildId) · \(QiulingFonts.shared.blocks.count) ligatures · space skips a word")
-                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(PracticeTheme.faint)
-                    .multilineTextAlignment(.trailing)
-            }
-            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity, minHeight: 120)
+            .padding(20)
+            .practiceCardBackground()
         }
     }
-}
 
-@available(iOS 16, *)
-private extension View {
-    @ViewBuilder func scrollDismissesKeyboardIfAvailable() -> some View {
-        if #available(iOS 16, *) { self.scrollDismissesKeyboard(.interactively) } else { self }
+    private var stateSlot: some View {
+        ZStack {
+            if model.finished {
+                EmptyView()
+            } else if model.race != nil, !model.isRunning {
+                Text("Type what you read. Press space to skip a word you can't make out.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+            } else if model.isRunning {
+                Button("Start over", systemImage: "arrow.counterclockwise") { model.start() }
+                    .practiceSecondaryButton()
+                    .controlSize(.regular)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 44)
     }
 }
 
@@ -211,43 +283,41 @@ private extension View {
 struct PassageView: View {
     let race: Race
     let generation: Int
-    let focused: Bool
+    @ScaledMetric(relativeTo: .title) private var scriptSize: CGFloat = 40
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 16) {
             scriptLine(race.current, typed: race.typed, active: true)
             typedRow
             if race.lines.indices.contains(race.lineIndex + 1) {
                 scriptLine(race.lines[race.lineIndex + 1], typed: "", active: false).opacity(0.28)
             }
         }
-        .padding(18)
+        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .practiceCard()
-        .blur(radius: focused ? 0 : 5)
-        .opacity(focused ? 1 : 0.6)
-        .animation(.easeOut(duration: 0.15), value: focused)
+        .practiceCardBackground()
     }
 
-    /// Each drawn block is its own run so a colour change never splits a ligature.
+    /// Each drawn mark is its own run so a colour change never splits a glyph.
     private func scriptLine(_ line: Race.Line, typed: String, active: Bool) -> some View {
         let typedChars = Array(typed)
         let text = Array(line.text)
         var out = AttributedString()
         for b in line.blocks {
             var run = AttributedString(b.text)
-            run.font = PracticeTheme.script(active ? 40 : 30)
-            if b.isSpace { run.foregroundColor = PracticeTheme.ink; out += run; continue }
+            run.font = PracticeTheme.script(active ? scriptSize : scriptSize * 0.75)
+            if b.isSpace { run.foregroundColor = Color.Signal.label; out += run; continue }
             let typedHere = b.range.filter { $0 < typedChars.count }
             let isCurrent = active && b.range.contains(typedChars.count)
             if typedHere.count == b.range.count {
                 let allRight = typedHere.allSatisfy { typedChars[$0] == text[$0] }
-                run.foregroundColor = UIColor(allRight ? PracticeTheme.muted : PracticeTheme.accent)
+                run.foregroundColor = allRight ? Color.Signal.secondaryLabel : PracticeTheme.wrong
                 if !allRight { run.backgroundColor = PracticeTheme.wrongBackground }
             } else if isCurrent {
+                run.foregroundColor = Color.Signal.label
                 run.backgroundColor = PracticeTheme.tint
             } else {
-                run.foregroundColor = PracticeTheme.ink
+                run.foregroundColor = Color.Signal.label
             }
             out += run
         }
@@ -263,19 +333,19 @@ struct PassageView: View {
         for (i, ch) in text.enumerated() {
             if i < typed.count {
                 var r = AttributedString(typed[i] == raceSkip ? "·" : String(typed[i]))
-                r.foregroundColor = UIColor(typed[i] == ch ? PracticeTheme.good : PracticeTheme.accent)
+                r.foregroundColor = typed[i] == ch ? PracticeTheme.good : PracticeTheme.wrong
                 if typed[i] != ch { r.backgroundColor = PracticeTheme.wrongBackground }
                 out += r
             } else if ch == " " {
                 out += AttributedString(" ")
             } else {
-                var r = AttributedString("_"); r.foregroundColor = PracticeTheme.faint; out += r
+                var r = AttributedString("_"); r.foregroundColor = Color.Signal.tertiaryLabel; out += r
             }
         }
         if !race.extra.isEmpty {
-            var r = AttributedString(race.extra); r.foregroundColor = PracticeTheme.accent; out += r
+            var r = AttributedString(race.extra); r.foregroundColor = PracticeTheme.wrong; out += r
         }
-        return Text(out).font(.system(size: 14, weight: .semibold, design: .monospaced)).kerning(0.8)
+        return Text(out).font(.system(.footnote, design: .monospaced).weight(.semibold)).kerning(0.8)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -286,101 +356,196 @@ struct PassageView: View {
 struct ResultsView: View {
     let race: Race
     let again: () -> Void
+    @State private var celebrate = false
+    @ScaledMetric(relativeTo: .title) private var glyphSize: CGFloat = 30
+
+    private var stats: Race.Stats { race.stats() }
+
+    /// Ties or beats the best saved race, once there is more than one to
+    /// compare against; a race too short to be saved never counts.
+    private var isBest: Bool {
+        let store = PracticeStore.shared
+        return stats.seconds >= 5 && stats.wpm >= store.best && store.book.sessions.count > 1
+    }
+
+    private var medianDecodeMs: Int? {
+        let d = race.marks.compactMap { $0.clean ? $0.decode : nil }.sorted()
+        return d.isEmpty ? nil : Int((d[d.count / 2] * 1000).rounded())
+    }
 
     var body: some View {
-        let s = race.stats()
-        let store = PracticeStore.shared
-        VStack(alignment: .leading, spacing: 20) {
-            HStack(alignment: .firstTextBaseline, spacing: 28) {
-                stat("\(s.wpm)", "wpm")
-                stat("\(s.accuracy)", "accuracy %")
-                stat(race.slowest(min: 1).isEmpty ? "—" : "\(medianDecode())", "median decode ms", small: true)
-                stat("\(s.blocks)", "marks read", small: true)
-            }
-            .padding(.horizontal, 20)
-
-            if s.wpm >= store.best, store.book.sessions.count > 1 {
-                Text("personal best").practiceLabel().foregroundStyle(PracticeTheme.good).padding(.horizontal, 20)
+        let s = stats
+        let misread = race.misreadings()
+        let slow = race.slowest()
+        SignalList {
+            SignalSection {
+                hero(s)
+                    .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
+            } footer: {
+                if s.seconds < 5 { Text("Races shorter than 5 seconds aren't saved to Progress.") }
             }
 
-            if #available(iOS 16, *) { chart.padding(.horizontal, 16) }
+            SignalSection {
+                chart(s)
+                    .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
+            } header: {
+                Text("Second by second")
+            } footer: {
+                Text("Pace is your speed so far at each second. Dots mark seconds with a mistake.")
+            }
 
-            let misread = race.misreadings()
             if !misread.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("what you misread").practiceLabel()
+                SignalSection {
                     ForEach(misread.prefix(8)) { m in
-                        HStack(spacing: 14) {
-                            Text(m.text).font(PracticeTheme.script(30)).frame(width: 88, alignment: .leading)
-                            Text(m.got).font(PracticeTheme.mono).foregroundStyle(PracticeTheme.accent).bold()
-                            Text("→").foregroundStyle(PracticeTheme.faint)
-                            Text(m.text).font(PracticeTheme.mono).foregroundStyle(PracticeTheme.good).bold()
+                        HStack(spacing: 12) {
+                            Text(m.text).font(PracticeTheme.script(glyphSize)).frame(width: 72, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(m.text).font(.system(.body, design: .monospaced)).foregroundStyle(Color.Signal.label)
+                                Text(typedLine(m.got)).font(.footnote)
+                            }
                             Spacer()
-                            Text("×\(m.n)").font(PracticeTheme.mono).foregroundStyle(PracticeTheme.muted)
+                            Text("×\(m.n)").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
                         }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("\(PracticeFormat.spelled(m.text)), typed as \(PracticeFormat.spelled(m.got)), \(m.n) times")
                     }
+                } header: {
+                    Text("What you misread")
                 }
-                .padding(18).practiceCard().padding(.horizontal, 16)
             }
 
-            let slow = race.slowest()
             if !slow.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("slowest to recognise").practiceLabel()
+                SignalSection {
                     ForEach(slow.prefix(6)) { m in
-                        HStack {
-                            Text(m.text).font(PracticeTheme.script(30)).frame(width: 88, alignment: .leading)
-                            Text(m.text).font(PracticeTheme.mono).foregroundStyle(PracticeTheme.muted)
+                        HStack(spacing: 12) {
+                            Text(m.text).font(PracticeTheme.script(glyphSize)).frame(width: 72, alignment: .leading)
+                            Text(m.text).font(.system(.body, design: .monospaced))
                             Spacer()
-                            Text("\(m.ms) ms").font(PracticeTheme.mono).foregroundStyle(PracticeTheme.ink)
+                            Text(PracticeFormat.seconds(ms: m.ms)).font(.body.monospacedDigit()).foregroundStyle(Color.Signal.label)
                         }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("\(PracticeFormat.spelled(m.text)), \(PracticeFormat.secondsSpoken(ms: m.ms)) to read")
                     }
+                } header: {
+                    Text("Slowest to read")
                 }
-                .padding(18).practiceCard().padding(.horizontal, 16)
             }
 
-            Button("Again", systemImage: "arrow.counterclockwise") { again() }.practicePrimaryButton().controlSize(.large).padding(.horizontal, 20)
+            Color.clear.frame(height: 88).listRowBackground(Color.clear).listRowInsets(EdgeInsets())
         }
-    }
-
-    private func medianDecode() -> Int {
-        let d = race.marks.compactMap { $0.clean ? $0.decode : nil }.sorted()
-        return d.isEmpty ? 0 : Int((d[d.count / 2] * 1000).rounded())
-    }
-
-    private func stat(_ value: String, _ label: String, small: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(value).font(.system(size: small ? 24 : 44, weight: .semibold, design: .monospaced)).monospacedDigit()
-                .foregroundStyle(small ? PracticeTheme.muted : PracticeTheme.ink)
-            Text(label).practiceLabel()
+        .safeAreaInset(edge: .bottom) {
+            Button("Race again", systemImage: "arrow.counterclockwise") { again() }
+                .practicePrimaryButton()
+                .controlSize(.large)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 12)
         }
+        .onAppear { celebrate = isBest }
+        .practiceSuccessHaptic(trigger: celebrate)
     }
 
-    @available(iOS 16, *)
-    private var chart: some View {
+    private func typedLine(_ got: String) -> AttributedString {
+        var out = AttributedString("You typed ")
+        var typed = AttributedString(got); typed.foregroundColor = PracticeTheme.wrong
+        out += typed
+        return out
+    }
+
+    // MARK: Hero
+
+    private func hero(_ s: Race.Stats) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("\(s.wpm)")
+                        .font(.system(.largeTitle, design: .rounded, weight: .semibold)).monospacedDigit()
+                    if celebrate {
+                        Label("New personal best", systemImage: "trophy.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(PracticeTheme.good)
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(PracticeTheme.good.opacity(0.14), in: Capsule())
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                Text("Words per minute").font(.footnote).foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(s.wpm) words per minute\(celebrate ? ", new personal best" : "")")
+
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 16) { tiles(s) }
+                VStack(alignment: .leading, spacing: 12) { tiles(s) }
+            }
+        }
+        .animation(.snappy, value: celebrate)
+    }
+
+    @ViewBuilder
+    private func tiles(_ s: Race.Stats) -> some View {
+        tile("\(s.accuracy)%", "Accuracy", spoken: "\(s.accuracy) percent accuracy")
+        tile("\(s.blocks)", "Marks read", spoken: "\(s.blocks) marks read")
+        tile(
+            medianDecodeMs.map { PracticeFormat.seconds(ms: $0) } ?? "—",
+            "Time to read a mark",
+            spoken: medianDecodeMs.map { "\(PracticeFormat.secondsSpoken(ms: $0)) to read a mark" } ?? "No clean marks to time",
+        )
+    }
+
+    private func tile(_ value: String, _ caption: String, spoken: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value).font(.title3.weight(.semibold)).monospacedDigit()
+            Text(caption).font(.caption).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
+    }
+
+    // MARK: Chart
+
+    private func chart(_ s: Race.Stats) -> some View {
         let series = race.series()
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("this run, second by second").practiceLabel()
-            Chart {
-                ForEach(series, id: \.s) { p in
-                    LineMark(x: .value("s", p.s), y: .value("raw", p.raw)).foregroundStyle(PracticeTheme.faint).interpolationMethod(.monotone)
-                    LineMark(x: .value("s", p.s), y: .value("wpm", p.avg), series: .value("k", "avg")).foregroundStyle(PracticeTheme.ink).lineStyle(StrokeStyle(lineWidth: 2)).interpolationMethod(.monotone)
-                    if p.err > 0 {
-                        PointMark(x: .value("s", p.s), y: .value("raw", p.raw)).foregroundStyle(PracticeTheme.accent).symbolSize(30)
-                    }
+        let mistakes = series.reduce(0) { $0 + $1.err }
+        return Chart {
+            ForEach(series, id: \.s) { p in
+                LineMark(x: .value("Second", p.s), y: .value("Words per minute", p.raw))
+                    .foregroundStyle(by: .value("Series", "This second"))
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+                    .interpolationMethod(.monotone)
+                LineMark(x: .value("Second", p.s), y: .value("Words per minute", p.avg))
+                    .foregroundStyle(by: .value("Series", "Pace"))
+                    .lineStyle(StrokeStyle(lineWidth: 2))
+                    .interpolationMethod(.monotone)
+                if p.err > 0 {
+                    PointMark(x: .value("Second", p.s), y: .value("Words per minute", p.raw))
+                        .foregroundStyle(by: .value("Series", "Mistakes"))
+                        .symbolSize(30)
                 }
             }
-            .chartYAxis { AxisMarks(position: .leading) { AxisGridLine().foregroundStyle(PracticeTheme.line); AxisValueLabel().font(.system(size: 9, design: .monospaced)).foregroundStyle(PracticeTheme.muted) } }
-            .chartXAxis { AxisMarks { AxisValueLabel().font(.system(size: 9, design: .monospaced)).foregroundStyle(PracticeTheme.muted) } }
-            .frame(height: 150)
-            HStack(spacing: 14) {
-                legend(PracticeTheme.ink, "wpm so far"); legend(PracticeTheme.faint, "raw, that second"); legend(PracticeTheme.accent, "mistakes")
+        }
+        .chartForegroundStyleScale([
+            "Pace": Color.Signal.label,
+            "This second": Color.Signal.tertiaryLabel,
+            "Mistakes": PracticeTheme.wrong,
+        ])
+        .chartLegend(position: .bottom, alignment: .leading)
+        .chartYAxis {
+            AxisMarks(position: .leading) {
+                AxisGridLine().foregroundStyle(Color.Signal.quaternaryFill)
+                AxisValueLabel().font(.caption2.monospacedDigit()).foregroundStyle(Color.Signal.secondaryLabel)
             }
         }
-        .padding(18).practiceCard()
-    }
-
-    private func legend(_ c: Color, _ t: String) -> some View {
-        HStack(spacing: 5) { Rectangle().fill(c).frame(width: 12, height: 2); Text(t).font(.system(size: 10, design: .monospaced)).foregroundStyle(PracticeTheme.muted) }
+        .chartXAxis {
+            AxisMarks { value in
+                AxisValueLabel {
+                    if let v = value.as(Int.self) { Text("\(v) s") }
+                }
+                .font(.caption2.monospacedDigit()).foregroundStyle(Color.Signal.secondaryLabel)
+            }
+        }
+        .font(.caption2)
+        .frame(height: 160)
+        .accessibilityLabel("Pace over the race, \(s.wpm) words per minute at the end, \(mistakes) mistakes")
     }
 }
