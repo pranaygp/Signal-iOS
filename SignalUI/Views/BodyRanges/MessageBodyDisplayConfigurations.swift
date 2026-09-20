@@ -50,8 +50,11 @@ public extension HydratedMessageBody.DisplayConfiguration {
         } else {
             baseTextColor = ConversationStyle.bubbleTextColorIncomingThemed
         }
+        // What is being typed is message text, so it is set in Qiuling like
+        // the sent message will be; the text view's own font only reaches the
+        // placeholder, this configuration restyles everything typed.
         return .init(
-            baseFont: .defaultBaseFont,
+            baseFont: .qiulingBody,
             baseTextColor: baseTextColor,
             mentionBackgroundColor: .incomingMessageBubbleMentionBg,
             revealedSpoilerBgColor: .incomingMessageBubbleMentionBg,
@@ -61,7 +64,7 @@ public extension HydratedMessageBody.DisplayConfiguration {
 
     static func composingAttachment() -> Self {
         return .init(
-            baseFont: .defaultBaseFont,
+            baseFont: .qiulingBody,
             baseTextColor: .fixed(.Signal.label),
             mentionBackgroundColor: .incomingMessageBubbleMentionBg,
             revealedSpoilerBgColor: .incomingMessageBubbleMentionBg,

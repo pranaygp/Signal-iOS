@@ -48,16 +48,52 @@ UPLOAD_AUTH=(-allowProvisioningUpdates
 ARCHIVE=build/Signal-Qiuling.xcarchive
 rm -rf "$ARCHIVE"
 
-echo "== archiving build $BUILD as $BUNDLE_PREFIX.q"
-xcodebuild archive \
+# `xcodebuild archive` throws away its intermediates and rebuilds everything
+# from scratch every run — fifteen-plus minutes for a one-line change. So the
+# compile is an ordinary incremental `build` into a persistent DerivedData,
+# and the .xcarchive is assembled by hand from the products; -exportArchive
+# re-signs for distribution and uploads it exactly as it would a real one.
+# Swift is set to incremental compilation too: App Store Release defaults to
+# whole-module, which recompiles a whole module for any edit inside it.
+DERIVED=build/DerivedData
+PRODUCTS="$DERIVED/Build/Products/App Store Release-iphoneos"
+echo "== building $BUILD as $BUNDLE_PREFIX.q"
+xcodebuild build \
   -workspace Signal.xcworkspace -scheme Signal -configuration "App Store Release" \
-  -destination generic/platform=iOS -archivePath "$ARCHIVE" \
+  -destination generic/platform=iOS -derivedDataPath "$DERIVED" \
   "${SIGN_AUTH[@]}" \
   DEVELOPMENT_TEAM="$TEAM_ID" SIGNAL_BUNDLEID_PREFIX="$BUNDLE_PREFIX" SIGNAL_MERCHANTID="" \
   QIULING_FONT_MANIFEST_URL="${QIULING_FONT_MANIFEST_URL:-}" QIULING_FONT_BYPASS="${QIULING_FONT_BYPASS:-}" \
   CODE_SIGN_STYLE=Automatic PROVISIONING_PROFILE_SPECIFIER="" \
-  | tee build/archive.log | grep -E "error:|warning: .*(Qiuling|provision)|\*\* ARCHIVE" || true
-[ -d "$ARCHIVE" ] || { echo "archive failed; see build/archive.log" >&2; exit 1; }
+  SWIFT_COMPILATION_MODE=incremental DEPLOYMENT_POSTPROCESSING=YES STRIP_INSTALLED_PRODUCT=YES \
+  | tee build/archive.log | grep -E "error:|warning: .*(Qiuling|provision)|\*\* BUILD" || true
+[ -d "$PRODUCTS/Signal.app" ] && grep -q "BUILD SUCCEEDED" build/archive.log || { echo "build failed; see build/archive.log" >&2; exit 1; }
+
+echo "== assembling $ARCHIVE"
+mkdir -p "$ARCHIVE/Products/Applications" "$ARCHIVE/dSYMs"
+cp -R "$PRODUCTS/Signal.app" "$ARCHIVE/Products/Applications/"
+find "$PRODUCTS" -maxdepth 1 -name "*.dSYM" -exec cp -R {} "$ARCHIVE/dSYMs/" \;
+APP_PLIST="$ARCHIVE/Products/Applications/Signal.app/Info.plist"
+SIGNER=$(codesign -dvv "$ARCHIVE/Products/Applications/Signal.app" 2>&1 | sed -n 's/^Authority=\(Apple De[a-z]*: .*\)$/\1/p' | head -1)
+cat > "$ARCHIVE/Info.plist" <<ARCHIVEPLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>ApplicationProperties</key><dict>
+    <key>ApplicationPath</key><string>Applications/Signal.app</string>
+    <key>Architectures</key><array><string>arm64</string></array>
+    <key>CFBundleIdentifier</key><string>$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PLIST")</string>
+    <key>CFBundleShortVersionString</key><string>$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PLIST")</string>
+    <key>CFBundleVersion</key><string>$BUILD</string>
+    <key>SigningIdentity</key><string>$SIGNER</string>
+    <key>Team</key><string>$TEAM_ID</string>
+  </dict>
+  <key>ArchiveVersion</key><integer>2</integer>
+  <key>CreationDate</key><date>$(date -u +%Y-%m-%dT%H:%M:%SZ)</date>
+  <key>Name</key><string>Signal</string>
+  <key>SchemeName</key><string>Signal</string>
+</dict></plist>
+ARCHIVEPLIST
 
 [ "${1:-}" = archive ] && { echo "archived: $ARCHIVE"; exit 0; }
 
