@@ -1568,6 +1568,7 @@
 		76725D2D29143CEC000E8AE1 /* ConversationInputToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76725D2C29143CEC000E8AE1 /* ConversationInputToolbar.swift */; };
 		7677E40729F7472800AC6A75 /* ShareAppExtensionContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7677E40629F7472800AC6A75 /* ShareAppExtensionContext.swift */; };
 		7677E40D29F75C4200AC6A75 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7677E40C29F75C4200AC6A75 /* Theme.swift */; };
+		Q1UL1NG00000000000BRANDB /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL1NG000000000000BRAND /* Brand.swift */; };
 		7677E40F29F79BF300AC6A75 /* SAEScreenLockViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7677E40E29F79BF300AC6A75 /* SAEScreenLockViewController.swift */; };
 		7677E41129F7A60500AC6A75 /* ScreenLockViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7677E41029F7A60500AC6A75 /* ScreenLockViewController.swift */; };
 		7677E41329F84C2100AC6A75 /* ScreenLockUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7677E41229F84C2100AC6A75 /* ScreenLockUI.swift */; };
@@ -5869,6 +5870,7 @@
 		76725D2C29143CEC000E8AE1 /* ConversationInputToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationInputToolbar.swift; sourceTree = "<group>"; };
 		7677E40629F7472800AC6A75 /* ShareAppExtensionContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareAppExtensionContext.swift; sourceTree = "<group>"; };
 		7677E40C29F75C4200AC6A75 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		Q1UL1NG000000000000BRAND /* Brand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brand.swift; sourceTree = "<group>"; };
 		7677E40E29F79BF300AC6A75 /* SAEScreenLockViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SAEScreenLockViewController.swift; sourceTree = "<group>"; };
 		7677E41029F7A60500AC6A75 /* ScreenLockViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenLockViewController.swift; sourceTree = "<group>"; };
 		7677E41229F84C2100AC6A75 /* ScreenLockUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenLockUI.swift; sourceTree = "<group>"; };
@@ -9310,6 +9312,7 @@
 				B9F817632BA263A900EAEE23 /* SignalSymbols.swift */,
 				34A954D4271B4F3E00B05242 /* Theme+Icons.swift */,
 				7677E40C29F75C4200AC6A75 /* Theme.swift */,
+				Q1UL1NG000000000000BRAND /* Brand.swift */,
 				66FC638329E2201500F00DAC /* ThemedColor+Theme.swift */,
 				B9F9ABF62CB98844001AE92D /* UIColor+Signal.swift */,
 			);
@@ -18365,6 +18368,7 @@
 				3402AA8E271D9E180084CBAE /* TextViewWithPlaceholder.swift in Sources */,
 				34A954DC271B4F3E00B05242 /* Theme+Icons.swift in Sources */,
 				7677E40D29F75C4200AC6A75 /* Theme.swift in Sources */,
+				Q1UL1NG00000000000BRANDB /* Brand.swift in Sources */,
 				66FC638429E2201500F00DAC /* ThemedColor+Theme.swift in Sources */,
 				3402AA62271D9DEC0084CBAE /* ThreadUtil+SignalUI.swift in Sources */,
 				3402AA65271D9DEC0084CBAE /* ThreadViewModel.swift in Sources */,

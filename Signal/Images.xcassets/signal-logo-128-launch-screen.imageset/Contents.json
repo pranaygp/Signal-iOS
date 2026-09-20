@@ -1,25 +1,25 @@
 {
-  "images" : [
+  "images": [
     {
-      "filename" : "signal-logo-ultramarine.pdf",
-      "idiom" : "universal"
+      "filename": "glyph-vermilion.svg",
+      "idiom": "universal"
     },
     {
-      "appearances" : [
+      "appearances": [
         {
-          "appearance" : "luminosity",
-          "value" : "dark"
+          "appearance": "luminosity",
+          "value": "dark"
         }
       ],
-      "filename" : "signal-logo-white.pdf",
-      "idiom" : "universal"
+      "filename": "glyph-dark.svg",
+      "idiom": "universal"
     }
   ],
-  "info" : {
-    "author" : "xcode",
-    "version" : 1
+  "info": {
+    "author": "xcode",
+    "version": 1
   },
-  "properties" : {
-    "preserves-vector-representation" : true
+  "properties": {
+    "preserves-vector-representation": true
   }
 }

@@ -91,6 +91,31 @@ class ProvisioningSocketManager: ProvisioningConnectionListener {
         rotationTask = nil
     }
 
+    /// The server closes a provisioning socket after 90s, so a code shown on
+    /// another screen has to be fresh to be worth copying. Open a new socket,
+    /// hand its URL to the delegate, and then hold it — no rotation — until
+    /// the server would have closed it anyway, at which point fall back to
+    /// the manual refresh button. Returns the URL, or nil on failure.
+    func refreshAndHold(seconds: UInt64 = 85) async -> URL? {
+        rotationTask?.cancel()
+        let url: URL
+        do {
+            url = try await openNewProvisioningSocket()
+        } catch {
+            await delegate?.provisioningSocketManagerDidPauseQRRotation(self)
+            return nil
+        }
+        await delegate?.provisioningSocketManager(self, didUpdateProvisioningURL: url)
+        rotationTask = Task {
+            do {
+                try await Task.sleep(nanoseconds: seconds * NSEC_PER_SEC)
+                try Task.checkCancellation()
+            } catch { return }
+            await delegate?.provisioningSocketManagerDidPauseQRRotation(self)
+        }
+        return url
+    }
+
     // MARK: ProvisioningConnectionListener
 
     func provisioningConnection(

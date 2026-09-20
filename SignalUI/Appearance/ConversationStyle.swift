@@ -246,8 +246,7 @@ public struct ConversationStyle {
         {
             return .blur(blurEffect: blurEffect)
         }
-        let color = isDarkThemeEnabled ? UIColor(rgbHex: 0x2C2C2E) : UIColor(rgbHex: 0xE9E9E9)
-        return .solidColor(color: color)
+        return .solidColor(color: Brand.bubbleSurface(isDarkThemeEnabled: isDarkThemeEnabled))
     }
 
     /// - Returns: Background style for incoming message bubble in the current chat.
@@ -259,9 +258,16 @@ public struct ConversationStyle {
         )
     }
 
+    /// Whether this chat is on the default chat color, i.e. the user never
+    /// picked one. Then outgoing bubbles take the brand's blush tint with
+    /// espresso text rather than a saturated color with white text; a chat
+    /// color the user chose is honoured as Signal always has.
+    public var usesBrandBubble: Bool {
+        chatColorSetting == PaletteChatColor.ultramarine.colorSetting
+    }
     /// - Returns: Background style for outgoing message bubble in the current chat.
     public var bubbleChatColorOutgoing: ColorOrGradientValue {
-        chatColorValue
+        usesBrandBubble ? .solidColor(color: Brand.bubbleTint(isDarkThemeEnabled: isDarkThemeEnabled)) : chatColorValue
     }
 
     public var bubbleChatColorReleaseNotes: ColorOrGradientValue {
@@ -299,7 +305,7 @@ public struct ConversationStyle {
     }
 
     public var bubbleTextColorOutgoing: UIColor {
-        Self.bubbleTextColorOutgoingThemed.color(isDarkThemeEnabled: isDarkThemeEnabled)
+        usesBrandBubble ? bubbleTextColorIncoming : Self.bubbleTextColorOutgoingThemed.color(isDarkThemeEnabled: isDarkThemeEnabled)
     }
 
     public var bubbleTextColorReleaseNotes: UIColor {
@@ -358,7 +364,7 @@ public struct ConversationStyle {
     }
 
     public var bubbleSecondaryTextColorOutgoing: UIColor {
-        Self.bubbleSecondaryTextColorOutgoingThemed.color(isDarkThemeEnabled: isDarkThemeEnabled)
+        usesBrandBubble ? bubbleSecondaryTextColorIncoming : Self.bubbleSecondaryTextColorOutgoingThemed.color(isDarkThemeEnabled: isDarkThemeEnabled)
     }
 
     public func bubbleSecondaryTextColor(isIncoming: Bool) -> UIColor {
@@ -375,6 +381,7 @@ public struct ConversationStyle {
         if message is TSIncomingMessage {
             return isDarkThemeEnabled ? .ows_whiteAlpha90 : .Signal.accent
         } else if message is TSOutgoingMessage {
+            if usesBrandBubble { return isDarkThemeEnabled ? .ows_whiteAlpha90 : .Signal.accent }
             return isDarkThemeEnabled ? .ows_whiteAlpha90 : .white
         } else if message is TSReleaseNotesMessage {
             return .ows_whiteAlpha90

@@ -6,6 +6,7 @@
 import SignalServiceKit
 import SignalUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 class ProvisioningQRCodeViewController: ProvisioningBaseViewController, ProvisioningSocketManagerUIDelegate {
     private let provisioningQRCodeViewModel: RotatingQRCodeView.Model
@@ -39,6 +40,9 @@ class ProvisioningQRCodeViewController: ProvisioningBaseViewController, Provisio
                 self.provisioningSocketManager.stop()
                 self.provisioningController.cancelProvisioning(from: self)
             },
+            onCopyCode: { [unowned self] in
+                await self.copyCodeForAnotherScreen()
+            },
         ))
 
         addChild(qrCodeViewHostingContainer)
@@ -59,6 +63,35 @@ class ProvisioningQRCodeViewController: ProvisioningBaseViewController, Provisio
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         provisioningSocketManager.stop()
+        holdOpenInBackground = nil
+    }
+
+    // MARK: - Linking from the same phone
+
+    /// Linking needs the primary's camera pointed at this code, and when the
+    /// primary is App Store Signal on this same phone there is no second
+    /// camera. So: put the code on the clipboard (Universal Clipboard carries
+    /// it to a Mac in a second), freeze rotation on a fresh 90s socket, and
+    /// keep the process alive in the background so the socket is still open
+    /// when the primary, scanning the Mac's screen, sends the link.
+    private var holdOpenInBackground: OWSBackgroundTask?
+
+    @MainActor
+    private func copyCodeForAnotherScreen() async -> Bool {
+        provisioningQRCodeViewModel.updateURLDisplayMode(.loading)
+        guard let url = await provisioningSocketManager.refreshAndHold() else { return false }
+        if let image = QRCodeGenerator().generateQRCode(url: url, stylingMode: .brandedWithoutLogo) {
+            UIPasteboard.general.setItems([[UTType.png.identifier: image.pngData() as Any]], options: [
+                .expirationDate: Date(timeIntervalSinceNow: 90),
+            ])
+        } else {
+            UIPasteboard.general.url = url
+        }
+        // iOS grants roughly 30s of background time; the socket, and the
+        // primary's link message, must arrive within it.
+        holdOpenInBackground = OWSBackgroundTask(label: "ProvisioningQRCodeViewController.copyCode", completionBlock: nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 90) { [weak self] in self?.holdOpenInBackground = nil }
+        return true
     }
 
     // MARK: -
@@ -83,6 +116,10 @@ class ProvisioningQRCodeViewController: ProvisioningBaseViewController, Provisio
 private struct ProvisioningQRCodeView: View {
     @ObservedObject var model: RotatingQRCodeView.Model
     let onCancel: () -> Void
+    let onCopyCode: () async -> Bool
+    @State private var copyState: CopyState = .idle
+
+    private enum CopyState { case idle, copying, copied, failed }
 
     var body: some View {
         GeometryReader { overallGeometry in
@@ -106,6 +143,11 @@ private struct ProvisioningQRCodeView: View {
                         .frame(height: 24)
 
                     helpLink
+
+                    Spacer()
+                        .frame(height: 20)
+
+                    copyCodeSection
 
 #if TESTABLE_BUILD
                     if let qrCodeUrl = model.qrCodeViewModel.qrCodeURL {
@@ -182,6 +224,34 @@ private struct ProvisioningQRCodeView: View {
         .font(.subheadline.weight(.semibold))
     }
 
+    private var copyCodeSection: some View {
+        VStack(spacing: 8) {
+            Button {
+                Task {
+                    copyState = .copying
+                    copyState = await onCopyCode() ? .copied : .failed
+                }
+            } label: {
+                switch copyState {
+                case .idle, .failed: Text(LocalizationNotNeeded("Copy code for another screen"))
+                case .copying: Text(LocalizationNotNeeded("Getting a fresh code…"))
+                case .copied: Text(LocalizationNotNeeded("Copied — you have about a minute"))
+                }
+            }
+            .buttonStyle(Registration.UI.MediumSecondaryButtonStyle())
+            .disabled(copyState == .copying)
+
+            Text(LocalizationNotNeeded(
+                copyState == .failed
+                    ? "Couldn't get a code. Check the connection and try again."
+                    : "Linking from Signal on this same phone? Copy the code, paste it on your Mac (Preview › File › New from Clipboard), then in Signal go to Linked Devices and scan the Mac's screen. Have that scanner open before you copy.",
+            ))
+            .font(.footnote)
+            .foregroundStyle(Color.Signal.secondaryLabel)
+            .multilineTextAlignment(.center)
+        }
+    }
+
     private var cancelButton: some View {
         Button(CommonStrings.cancelButton, action: onCancel)
             .buttonStyle(Registration.UI.MediumSecondaryButtonStyle())
@@ -223,6 +293,7 @@ private struct PreviewView: View {
                 onRefreshButtonPressed: {},
             ),
             onCancel: {},
+            onCopyCode: { true },
         )
         .padding(.horizontal, 16)
     }
