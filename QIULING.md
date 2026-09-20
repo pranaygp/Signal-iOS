@@ -43,11 +43,12 @@ changed file replaces the old registration.
 
 A fourth tab in the home bar (Chats · Calls · Practice · Stories) carries the
 reading trainer natively — SwiftUI, Liquid Glass on iOS 26, the Vermilion
-palette — with the same features as `web/read.html`: the type race
-(sentences, words, or your own text; 15–120 s), recall (a mark and four
-spellings), write (English in, a Qiuling picture out, to share into any
-chat), progress across sittings, and the Safari bookmark that sets pages in
-the script. It lives in `Signal/Practice/`:
+palette — with the same features as `web/read.html`. The tab lands straight
+on the type race (sentences, words, or your own text; 15–120 s); the header's
+icons push recall (a mark and four spellings) and progress across sittings,
+and its "…" menu holds write (English in, a Qiuling picture out, to share
+into any chat) and the Safari bookmark that sets pages in the script. One
+bottom bar — Signal's — throughout. It lives in `Signal/Practice/`:
 
 - `PracticeEngine.swift` — the race engine ported from `web/read.js`, plus the
   segmenter. Rather than carrying the ligature rules, it asks CoreText how the

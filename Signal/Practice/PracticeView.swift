@@ -11,82 +11,54 @@ import SwiftUI
 /// the web trainer's.
 @available(iOS 16, *)
 struct PracticeView: View {
-    enum Pane: String, CaseIterable, Identifiable {
-        case type, recall, write, progress, web
-        var id: String { rawValue }
-        var label: String {
-            switch self {
-            case .type: "type"
-            case .recall: "recall"
-            case .write: "write"
-            case .progress: "progress"
-            case .web: "web"
-            }
-        }
-        var symbol: String {
-            switch self {
-            case .type: "keyboard"
-            case .recall: "eye"
-            case .write: "square.and.pencil"
-            case .progress: "chart.xyaxis.line"
-            case .web: "safari"
-            }
-        }
-    }
+    enum Page: Hashable { case recall, write, progress, web }
 
-    @AppStorage("Practice.section") private var sectionRaw = Pane.type.rawValue
-    private var section: Binding<Pane> {
-        Binding(get: { Pane(rawValue: sectionRaw) ?? .type }, set: { sectionRaw = $0.rawValue })
-    }
     @StateObject private var race = RaceModel()
+    @State private var path: [Page] = []
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            PracticeTheme.paper.ignoresSafeArea()
-
-            Group {
-                switch section.wrappedValue {
-                case .type: TypeView(model: race)
-                case .recall: RecallView()
-                case .write: WriteView()
-                case .progress: ProgressTabView()
-                case .web: ReadWebView()
-                }
+        NavigationStack(path: $path) {
+            ZStack {
+                PracticeTheme.paper.ignoresSafeArea()
+                TypeView(model: race)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .padding(.bottom, 72)
-
-            sectionBar
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
-                .opacity(race.isTyping ? 0.15 : 1)
-                .animation(.easeOut(duration: 0.25), value: race.isTyping)
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: Page.self) { page in
+                ZStack {
+                    PracticeTheme.paper.ignoresSafeArea()
+                    switch page {
+                    case .recall: RecallView()
+                    case .write: WriteView()
+                    case .progress: ProgressTabView()
+                    case .web: ReadWebView()
+                    }
+                }
+                .toolbarBackground(.hidden, for: .navigationBar)
+                .navigationBarTitleDisplayMode(.inline)
+            }
         }
+        .environment(\.practiceNavigate, PracticeNavigate { path.append($0) })
         .tint(PracticeTheme.accent)
     }
+}
 
-    /// The trainer's tabs, floating at the bottom in glass.
-    private var sectionBar: some View {
-        HStack(spacing: 0) {
-            ForEach(Pane.allCases) { s in
-                Button {
-                    withAnimation(.easeInOut(duration: 0.22)) { section.wrappedValue = s }
-                } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: s.symbol).font(.system(size: 17, weight: .medium))
-                        Text(s.label).font(.system(size: 10, weight: .semibold, design: .monospaced)).kerning(0.8)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 9)
-                    .foregroundStyle(section.wrappedValue == s ? PracticeTheme.accent : PracticeTheme.muted)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(s.label))
-            }
-        }
-        .padding(.horizontal, 6)
-        .practiceGlass(RoundedRectangle(cornerRadius: 26, style: .continuous))
+/// How the landing screen's header opens the other sections.
+@available(iOS 16, *)
+struct PracticeNavigate {
+    let go: (PracticeView.Page) -> Void
+    func callAsFunction(_ page: PracticeView.Page) { go(page) }
+}
+
+@available(iOS 16, *)
+private struct PracticeNavigateKey: EnvironmentKey {
+    static let defaultValue = PracticeNavigate { _ in }
+}
+
+@available(iOS 16, *)
+extension EnvironmentValues {
+    var practiceNavigate: PracticeNavigate {
+        get { self[PracticeNavigateKey.self] }
+        set { self[PracticeNavigateKey.self] = newValue }
     }
 }
 
@@ -96,12 +68,33 @@ struct PracticeView: View {
 struct PracticeHeader: View {
     let title: String
     var subtitle: String? = nil
+    var showsActions = false
+    @Environment(\.practiceNavigate) private var navigate
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("Qiuling").font(.system(size: 15, weight: .bold, design: .monospaced)).kerning(2.4).textCase(.uppercase)
                     .foregroundStyle(PracticeTheme.ink)
                 Text(title).practiceLabel()
+                if showsActions {
+                    Spacer()
+                    HStack(spacing: 4) {
+                        action("eye", "Recall") { navigate(.recall) }
+                        action("chart.xyaxis.line", "Progress") { navigate(.progress) }
+                        Menu {
+                            Button { navigate(.write) } label: { Label("Write a message", systemImage: "square.and.pencil") }
+                            Button { navigate(.web) } label: { Label("Read the web in Qiuling", systemImage: "safari") }
+                        } label: {
+                            Image(systemName: "ellipsis").font(.system(size: 15, weight: .semibold))
+                                .frame(width: 34, height: 34).contentShape(Rectangle())
+                        }
+                        .accessibilityLabel("More")
+                    }
+                    .foregroundStyle(PracticeTheme.ink)
+                    .practiceGlass()
+                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 6 }
+                }
             }
             if let subtitle {
                 Text(subtitle).font(.system(size: 13)).foregroundStyle(PracticeTheme.muted)
@@ -110,5 +103,14 @@ struct PracticeHeader: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
         .padding(.top, 12)
+    }
+
+    private func action(_ symbol: String, _ label: String, _ go: @escaping () -> Void) -> some View {
+        Button(action: go) {
+            Image(systemName: symbol).font(.system(size: 15, weight: .semibold))
+                .frame(width: 34, height: 34).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }

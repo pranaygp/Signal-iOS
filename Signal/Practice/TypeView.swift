@@ -122,7 +122,7 @@ struct TypeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                PracticeHeader(title: "type", subtitle: "\(QiulingFonts.buildId) · \(QiulingFonts.shared.blocks.count) ligatures")
+                PracticeHeader(title: "type", subtitle: "\(QiulingFonts.buildId) · \(QiulingFonts.shared.blocks.count) ligatures", showsActions: true)
                 controls
                 if model.finished, let race = model.race {
                     ResultsView(race: race) { model.start() }

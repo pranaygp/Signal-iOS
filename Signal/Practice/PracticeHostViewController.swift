@@ -26,13 +26,8 @@ final class PracticeHostViewController: UIHostingController<PracticeView> {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // The trainer draws its own header; the navigation bar would double it.
+        // The SwiftUI stack inside draws its own bars; the outer one would double them.
         navigationController?.setNavigationBarHidden(true, animated: animated)
-    }
-
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-        navigationController?.setNavigationBarHidden(false, animated: animated)
     }
 }
 
