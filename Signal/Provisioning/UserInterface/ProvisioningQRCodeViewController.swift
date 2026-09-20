@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
+import AVFoundation
 import SignalServiceKit
 import SignalUI
 import SwiftUI
@@ -63,7 +64,7 @@ class ProvisioningQRCodeViewController: ProvisioningBaseViewController, Provisio
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         provisioningSocketManager.stop()
-        holdOpenInBackground = nil
+        stopHoldingOpen()
     }
 
     // MARK: - Linking from the same phone
@@ -75,6 +76,8 @@ class ProvisioningQRCodeViewController: ProvisioningBaseViewController, Provisio
     /// keep the process alive in the background so the socket is still open
     /// when the primary, scanning the Mac's screen, sends the link.
     private var holdOpenInBackground: OWSBackgroundTask?
+    private var keepAlive: AVAudioPlayer?
+    private var holdTimer: Timer?
 
     @MainActor
     private func copyCodeForAnotherScreen() async -> Bool {
@@ -87,12 +90,51 @@ class ProvisioningQRCodeViewController: ProvisioningBaseViewController, Provisio
         } else {
             UIPasteboard.general.url = url
         }
-        // iOS grants roughly 30s of background time; the socket, and the
-        // primary's link message, must arrive within it.
-        holdOpenInBackground = OWSBackgroundTask(label: "ProvisioningQRCodeViewController.copyCode", completionBlock: nil)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 90) { [weak self] in self?.holdOpenInBackground = nil }
+        holdOpen(seconds: 95)
         return true
     }
+
+    /// A background task alone buys about 30 seconds, which the first attempt
+    /// showed is not enough: the primary's link message landed on a socket
+    /// the suspended process had already lost. The app declares the `audio`
+    /// background mode, so for the length of the hold it also plays silence,
+    /// which is what keeps a process running in the background on iOS. Both
+    /// stop when the hold ends, the screen goes away, or the link completes.
+    private func holdOpen(seconds: TimeInterval) {
+        stopHoldingOpen()
+        holdOpenInBackground = OWSBackgroundTask(label: "ProvisioningQRCodeViewController.copyCode", completionBlock: nil)
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try AVAudioSession.sharedInstance().setActive(true)
+            let player = try AVAudioPlayer(data: Self.silence, fileTypeHint: AVFileType.wav.rawValue)
+            player.numberOfLoops = -1
+            player.volume = 0
+            player.play()
+            keepAlive = player
+        } catch {
+            Logger.warn("could not start the keep-alive: \(error)")
+        }
+        holdTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in self?.stopHoldingOpen() }
+    }
+
+    private func stopHoldingOpen() {
+        holdTimer?.invalidate(); holdTimer = nil
+        keepAlive?.stop(); keepAlive = nil
+        holdOpenInBackground = nil
+    }
+
+    /// One second of 8 kHz mono 16-bit silence as a WAV, built in memory.
+    private static let silence: Data = {
+        let rate: UInt32 = 8000, samples = rate, bytes = samples * 2
+        var d = Data()
+        func le32(_ v: UInt32) { d.append(contentsOf: withUnsafeBytes(of: v.littleEndian, Array.init)) }
+        func le16(_ v: UInt16) { d.append(contentsOf: withUnsafeBytes(of: v.littleEndian, Array.init)) }
+        d.append("RIFF".data(using: .ascii)!); le32(36 + bytes); d.append("WAVEfmt ".data(using: .ascii)!)
+        le32(16); le16(1); le16(1); le32(rate); le32(rate * 2); le16(2); le16(16)
+        d.append("data".data(using: .ascii)!); le32(bytes)
+        d.append(Data(count: Int(bytes)))
+        return d
+    }()
 
     // MARK: -
 
@@ -235,7 +277,7 @@ private struct ProvisioningQRCodeView: View {
                 switch copyState {
                 case .idle, .failed: Text(LocalizationNotNeeded("Copy code for another screen"))
                 case .copying: Text(LocalizationNotNeeded("Getting a fresh code…"))
-                case .copied: Text(LocalizationNotNeeded("Copied — you have about a minute"))
+                case .copied: Text(LocalizationNotNeeded("Copied — you have about 90 seconds"))
                 }
             }
             .buttonStyle(Registration.UI.MediumSecondaryButtonStyle())
