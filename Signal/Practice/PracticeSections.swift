@@ -359,6 +359,7 @@ struct ReadWebView: View {
                 step(1, "Open Settings, then Apps, then Safari, then Extensions.")
                 step(2, "Turn on Qiuling.")
                 step(3, "Choose Allow for all websites, or Ask each time.")
+                step(4, "If Safari is already open, quit it from the app switcher and open it again so it picks up the new extension.")
                 Button("Open Settings") {
                     if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                 }
@@ -367,11 +368,11 @@ struct ReadWebView: View {
             } header: {
                 Text("Turn it on once")
             } footer: {
-                Text("Open Settings lands on Qiuling's own page; Safari's extensions are two taps further. You can also turn it on in Safari: tap the page menu in the address bar, choose Manage Extensions, then Qiuling.")
+                Text("Open Settings lands on Qiuling's own page; Safari's extensions are two taps further. You can also turn it on in Safari: tap the ⋯ button in the address bar, choose Manage Extensions, then Qiuling.")
             }
 
             SignalSection {
-                step(1, "In Safari, tap the page menu in the address bar, then Qiuling. The page switches to your script.")
+                step(1, "In Safari, tap the ⋯ button at the end of the address bar, then Qiuling. The page switches to your script.")
                 step(2, "Tap it again to switch back.")
             } header: {
                 Text("Read a page")

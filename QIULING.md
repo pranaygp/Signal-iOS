@@ -194,3 +194,62 @@ The files under `SafariExtension/Resources` are added to the target
 individually (`_locales` and `images` as folder references) rather than as
 one blue folder: a top-level `Resources/` inside a flat .appex is read as the
 old bundle layout and the extension's Info.plist is then not found.
+
+## Keyboard
+
+The app also ships a system keyboard (`KeyboardExtension/`, bundle id
+`…q.keyboard`, display name "Qiuling"). Its keys carry the marks of the
+current alphabet instead of letters — the letter is only shown, small, in the
+pop-up while a key is held — so typing is practice, and what is on the screen
+is hard to read over a shoulder. The strip above the keys shows what has been
+typed into the field, set in Qiuling. Otherwise it behaves like the system
+keyboard: slide-to-correct, two-thumb typing, a held Delete that speeds up and
+then eats words, `123` and `#+=` layers, the globe. Holding a letter opens a
+row of the letter groups the font draws as one mark (from
+`mappings-morph.json`, bundled beside the font); lifting on one types its
+letters.
+
+In normal use the keyboard types ordinary Latin, so the receiving app sees
+English. The lock key on the bottom-left row turns on **private compose**: the
+strip becomes the composer, keys go into a buffer inside the keyboard, and
+nothing reaches the field until **Insert** (or Return). Insert encodes the
+buffer into the font's private-use code points, so the text reads as Qiuling
+in any app that has the font — this app's bubbles included — and as boxes in
+one that does not. The rule (`QiulingEncoder.swift`): shape the text with
+CoreText exactly as the screen would, and map each glyph back to the
+private-use point the font reaches it from (built once per process by asking
+the font for the glyph of every point in U+F0000…, letters filling only what
+the points left). Spaces always stay U+0020 whichever contextual space glyph
+was chosen; digits, punctuation the alphabet lacks and line breaks pass
+through unchanged. **Picture** copies the buffer as a PNG (the Write screen's
+parameters, local-only pasteboard, expires in five minutes); this needs Allow
+Full Access, and the strip says so when it is off. The buffer lives only in
+memory for the extension's life; the one persisted setting is the on/off
+flag. Secure fields force it off. Press and hold the composer to see the
+buffer in letters.
+
+Enable it under Settings › General › Keyboard › Keyboards › Add New Keyboard
+› Qiuling, then hold the globe on any keyboard. In the simulator,
+`Scripts/qiuling-sim.sh` ad-hoc signs the extension so it can be enabled the
+same way. The keyboard never connects to the internet: the font it draws with
+is the copy in `KeyboardExtension/Resources`, which `tools/ship_signal.sh`
+refreshes and stages with the app's and Safari's. As with the Safari
+extension, the resources are added to the target as individual files, not a
+blue `Resources/` folder.
+
+Height: the keyboard asks for 260pt portrait (44 strip + 216 keys) and 200
+landscape through one priority-999 constraint on its view, installed in
+`updateViewConstraints` once the view is in the host's hierarchy — the
+template pattern; Apple DTS says the host settles on it a few hundred
+milliseconds after appearance. The iOS 26.5 simulator host ignores it (444pt
+in the app's Practice field; 874pt and growing per launch in Safari), and the
+Apple developer forums report the same for `allowsSelfSizing` and an
+`intrinsicContentSize` override, so neither is used. Whatever height the host
+gives, the rows keep their natural pitch anchored to the bottom of the view; an
+over-tall host shows a blank band of backdrop above the strip. Whether a
+device honours the constraint is unverified.
+
+Signing follows the Safari extension: the App ID and a "Qiuling Keyboard
+Development" profile (every development certificate, all devices) were made
+through the App Store Connect API (`Scripts/qiuling-asc.py`), the target signs
+manually with that profile, and `-exportArchive` makes the store profile.

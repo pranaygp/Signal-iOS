@@ -32,6 +32,25 @@ class QiulingSettingsViewController: OWSTableViewController2 {
             name: QiulingFonts.statusDidChange,
             object: nil,
         )
+        // The keyboard is added in the Settings app, so the answer can change
+        // while we are in the background or while another keyboard is up.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(fontsDidChange),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil,
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(fontsDidChange),
+            name: UITextInputMode.currentInputModeDidChangeNotification,
+            object: nil,
+        )
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        updateTableContents()
     }
 
     override func themeDidChange() {
@@ -102,7 +121,45 @@ class QiulingSettingsViewController: OWSTableViewController2 {
         otherApps.footerTitle = "Safari and other apps use a copy of the font installed on your iPhone. iOS asks for permission the first time. You can remove it later in Settings, under General, then Fonts."
         contents.add(otherApps)
 
+        let keyboard = OWSTableSection()
+        keyboard.headerTitle = "Keyboard"
+        let isKeyboardAdded = Self.isKeyboardAdded
+        keyboard.add(.label(withText: "Qiuling keyboard", accessoryText: isKeyboardAdded ? "Added" : "Not added", accessoryType: .none))
+        keyboard.add(OWSTableItem.item(
+            name: isKeyboardAdded ? "Keyboard settings" : "Add the keyboard",
+            textColor: .Signal.accent,
+        ) {
+            UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
+        })
+        keyboard.add(OWSTableItem.item(name: "Try the keyboard", textColor: .Signal.accent) { [weak self] in
+            self?.navigationController?.pushViewController(QiulingKeyboardTryViewController(), animated: true)
+        })
+        keyboard.footerTitle = isKeyboardAdded
+            ? "Hold the globe key on any keyboard to switch to Qiuling. Tap the lock key to compose privately: your message stays in the keyboard until you insert it as Qiuling, or copy it as a picture with Picture. Pictures need Allow Full Access for the keyboard, in Settings under General, Keyboard, Keyboards, Qiuling. The keyboard never connects to the internet."
+            : "Type with Qiuling anywhere. In Settings, tap General, then Keyboard, then Keyboards, then Add New Keyboard, and choose Qiuling. Then hold the globe key on any keyboard to switch to it. The keys show marks instead of letters, so what you type is hard to read over your shoulder."
+        contents.add(keyboard)
+
         self.contents = contents
+    }
+
+    // MARK: - Keyboard
+
+    /// The keyboard extension's bundle id: the app's, plus ".keyboard".
+    static var keyboardBundleIdentifier: String { "\(Bundle.main.bundleIdentifier!).keyboard" }
+
+    /// Whether the person has added the Qiuling keyboard in Settings.
+    ///
+    /// The public API exposes no bundle identifier for an input mode, but a
+    /// third-party keyboard's mode describes itself with one, so we look for
+    /// ours in the description. The extension also declares the otherwise
+    /// unused language tag "mis", which is the fallback should the
+    /// description ever stop carrying the identifier.
+    static var isKeyboardAdded: Bool {
+        let identifier = keyboardBundleIdentifier
+        return UITextInputMode.activeInputModes.contains { mode in
+            if String(describing: mode).contains(identifier) { return true }
+            return mode.primaryLanguage == "mis"
+        }
     }
 
     /// An action row while its action runs: secondary text, a spinner where
@@ -198,6 +255,142 @@ class QiulingSettingsViewController: OWSTableViewController2 {
             _ = await fonts.installPhoneWide()
             isInstalling = false
             updateTableContents()
+        }
+    }
+}
+
+// MARK: - Try the keyboard
+
+/// A blank field to type into with the Qiuling keyboard. Nothing typed here
+/// is kept: the text lives in the view and goes with it.
+class QiulingKeyboardTryViewController: OWSTableViewController2, UITextViewDelegate {
+
+    private let textView = UITextView()
+    private let placeholder = UILabel()
+
+    // The footer is owned here rather than described to the table: changing
+    // its text in place keeps the table from reloading the cell that hosts
+    // the text view, which would take the keyboard down mid-sentence.
+    private lazy var footer: UITextView = buildFooterTextView(withDeepInsets: true)
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "Try the keyboard"
+
+        // No autocorrect or smart punctuation: the keyboard types marks, and
+        // the system would only rewrite them into something it recognises.
+        textView.font = UIFont(name: QiulingFonts.family, size: 28) ?? .systemFont(ofSize: 28)
+        textView.autocorrectionType = .no
+        textView.spellCheckingType = .no
+        textView.autocapitalizationType = .none
+        textView.smartQuotesType = .no
+        textView.smartDashesType = .no
+        textView.smartInsertDeleteType = .no
+        textView.returnKeyType = .default
+        textView.isScrollEnabled = false
+        textView.textContainerInset = .zero
+        textView.textContainer.lineFragmentPadding = 0
+        textView.delegate = self
+        textView.autoSetDimension(.height, toSize: 120, relation: .greaterThanOrEqual)
+
+        placeholder.text = "Type something"
+        placeholder.font = .dynamicTypeBody
+        placeholder.isUserInteractionEnabled = false
+
+        applyTheme()
+        buildTableContents()
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardStateDidChange),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil,
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardStateDidChange),
+            name: UITextInputMode.currentInputModeDidChangeNotification,
+            object: nil,
+        )
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        textView.becomeFirstResponder()
+    }
+
+    override func themeDidChange() {
+        super.themeDidChange()
+        applyTheme()
+        // Recolour the persistent footer in place: rebuilding the table
+        // would reload the cell and dismiss the keyboard.
+        footer.textColor = Self.defaultFooterTextColor
+        footer.backgroundColor = tableBackgroundColor
+    }
+
+    @objc
+    private func keyboardStateDidChange() {
+        AssertIsOnMainThread()
+        updateFooter()
+    }
+
+    private func applyTheme() {
+        textView.textColor = Brand.text
+        textView.backgroundColor = Theme.tableCell2BackgroundColor
+        placeholder.textColor = Theme.secondaryTextAndIconColor
+    }
+
+    private func footerText() -> String {
+        QiulingSettingsViewController.isKeyboardAdded
+            ? "Text you type here isn't saved."
+            : "Add the Qiuling keyboard first, in Settings. Text you type here isn't saved."
+    }
+
+    private func updateFooter() {
+        footer.text = footerText()
+        UIView.performWithoutAnimation {
+            tableView.beginUpdates()
+            tableView.endUpdates()
+        }
+    }
+
+    private func buildTableContents() {
+        let contents = OWSTableContents()
+        let section = OWSTableSection()
+        section.add(OWSTableItem(customCellBlock: { [weak self] in
+            let cell = OWSTableItem.newCell()
+            cell.selectionStyle = .none
+            guard let self else { return cell }
+
+            // The table is built once, but the cell may still be re-created
+            // by the table view, so the same text view moves into it and
+            // keeps what was typed.
+            self.textView.removeFromSuperview()
+            self.placeholder.removeFromSuperview()
+            cell.contentView.addSubview(self.textView)
+            cell.contentView.addSubview(self.placeholder)
+            self.textView.autoPinEdgesToSuperviewMargins()
+            self.placeholder.autoPinEdge(.leading, to: .leading, of: self.textView)
+            self.placeholder.autoPinEdge(.top, to: .top, of: self.textView)
+            self.placeholder.isHidden = !self.textView.text.isEmpty
+            return cell
+        }))
+        footer.text = footerText()
+        section.customFooterView = footer
+        section.customFooterHeight = UITableView.automaticDimension
+        contents.add(section)
+        self.contents = contents
+    }
+
+    // MARK: UITextViewDelegate
+
+    func textViewDidChange(_ textView: UITextView) {
+        placeholder.isHidden = !textView.text.isEmpty
+        // The cell grows with the text; tell the table so the field keeps
+        // the whole message in view.
+        UIView.performWithoutAnimation {
+            tableView.beginUpdates()
+            tableView.endUpdates()
         }
     }
 }
