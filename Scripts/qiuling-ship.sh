@@ -64,7 +64,6 @@ xcodebuild build \
   "${SIGN_AUTH[@]}" \
   DEVELOPMENT_TEAM="$TEAM_ID" SIGNAL_BUNDLEID_PREFIX="$BUNDLE_PREFIX" SIGNAL_MERCHANTID="" \
   QIULING_FONT_MANIFEST_URL="${QIULING_FONT_MANIFEST_URL:-}" QIULING_FONT_BYPASS="${QIULING_FONT_BYPASS:-}" \
-  CODE_SIGN_STYLE=Automatic PROVISIONING_PROFILE_SPECIFIER="" \
   SWIFT_COMPILATION_MODE=incremental DEPLOYMENT_POSTPROCESSING=YES STRIP_INSTALLED_PRODUCT=YES \
   | tee build/archive.log | grep -E "error:|warning: .*(Qiuling|provision)|\*\* BUILD" || true
 [ -d "$PRODUCTS/Signal.app" ] && grep -q "BUILD SUCCEEDED" build/archive.log || { echo "build failed; see build/archive.log" >&2; exit 1; }

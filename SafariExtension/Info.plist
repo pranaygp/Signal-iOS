@@ -29,5 +29,9 @@
 	</dict>
 	<key>OWSBundleIDPrefix</key>
 	<string>$(SIGNAL_BUNDLEID_PREFIX)</string>
+	<key>QiulingFontManifestURL</key>
+	<string>$(QIULING_FONT_MANIFEST_URL)</string>
+	<key>QiulingFontBypass</key>
+	<string>$(QIULING_FONT_BYPASS)</string>
 </dict>
 </plist>

@@ -1,5 +1,5 @@
 //
-// Copyright 2025 Signal Messenger, LLC
+// Copyright 2026 Signal Messenger, LLC
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
@@ -11,26 +11,35 @@ import SafariServices
 /// background script asks for is the font: `{type: "font"}` is answered with
 /// `{sha256, base64}` of the current Qiuling TTF.
 ///
-/// The app keeps the current font (bundled or downloaded over the air) in the
-/// shared App Group container as `QiulingFonts/current.ttf`, with
-/// `QiulingFonts/current.json` (`{"family","sha256","buildId"}`) beside it.
-/// Before the app has run once on a fresh install those files do not exist,
-/// so the copy of the TTF bundled with this extension is the fallback.
+/// The extension keeps itself current the same way the app does: the manifest
+/// at `QiulingFontManifestURL` names the TTF and its SHA-256 for this build,
+/// and a copy that differs from what is cached is fetched, verified and kept
+/// in the extension's own container. It shares no state with the app on
+/// purpose — Safari can be up to date even when the app has not been opened —
+/// and the copy bundled with the extension is the fallback when there is no
+/// network, no manifest URL, or nothing cached yet.
 final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
+
+    private static let buildId = "morph"
+    private static let family = "QiulingMorphWrite-Regular"
+    private static let checkInterval: TimeInterval = 60 * 60
 
     func beginRequest(with context: NSExtensionContext) {
         let item = context.inputItems.first as? NSExtensionItem
         let message = item?.userInfo?[SFExtensionMessageKey]
         let type = (message as? [String: Any])?["type"] as? String
 
-        let reply: [String: Any]
-        switch type {
-        case "font":
-            reply = fontReply()
-        default:
-            reply = ["error": "unknown message type: \(type ?? "nil")"]
+        guard type == "font" else {
+            complete(context, ["error": "unknown message type: \(type ?? "nil")"])
+            return
         }
+        Task {
+            await refreshIfDue()
+            complete(context, fontReply())
+        }
+    }
 
+    private func complete(_ context: NSExtensionContext, _ reply: [String: Any]) {
         let response = NSExtensionItem()
         response.userInfo = [SFExtensionMessageKey: reply]
         context.completeRequest(returningItems: [response], completionHandler: nil)
@@ -39,59 +48,81 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     // MARK: - The font
 
     private func fontReply() -> [String: Any] {
-        guard let data = currentFontData() else {
+        guard let data = cachedFontData() ?? bundledFontData() else {
             return ["error": "no font available"]
         }
-        let sha = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        return ["sha256": sha, "base64": data.base64EncodedString()]
+        return ["sha256": Self.sha(data), "base64": data.base64EncodedString()]
     }
 
-    /// The app-group copy if it is there and intact, else the bundled TTF.
-    private func currentFontData() -> Data? {
-        if let data = appGroupFontData() {
-            return data
-        }
-        return bundledFontData()
+    private static func sha(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    private func appGroupFontData() -> Data? {
-        guard
-            let prefix = Bundle.main.object(forInfoDictionaryKey: "OWSBundleIDPrefix") as? String,
-            !prefix.isEmpty,
-            let container = FileManager.default.containerURL(
-                forSecurityApplicationGroupIdentifier: "group.\(prefix).signal.group"
-            )
-        else {
-            return nil
-        }
-        let directory = container.appendingPathComponent("QiulingFonts", isDirectory: true)
-        let ttfURL = directory.appendingPathComponent("current.ttf")
-        let jsonURL = directory.appendingPathComponent("current.json")
-        guard let data = try? Data(contentsOf: ttfURL), !data.isEmpty else {
-            return nil
-        }
-        // If the app wrote a manifest, the file must match it; a half-written
-        // swap must not reach the page.
-        if
-            let json = try? Data(contentsOf: jsonURL),
-            let manifest = try? JSONSerialization.jsonObject(with: json) as? [String: Any],
-            let expected = manifest["sha256"] as? String,
-            !expected.isEmpty
-        {
-            let actual = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-            guard actual.caseInsensitiveCompare(expected) == .orderedSame else {
-                return nil
-            }
-        }
+    private var store: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base.appendingPathComponent("QiulingFonts", isDirectory: true)
+    }
+    private var defaults: UserDefaults { .standard }
+
+    /// The downloaded copy, if its bytes still match the hash it was saved under.
+    private func cachedFontData() -> Data? {
+        guard let sha = defaults.string(forKey: "currentSha") else { return nil }
+        let url = store.appendingPathComponent("\(sha).ttf")
+        guard let data = try? Data(contentsOf: url), Self.sha(data) == sha else { return nil }
         return data
     }
 
     private func bundledFontData() -> Data? {
         let bundle = Bundle(for: SafariWebExtensionHandler.self)
-        let name = "QiulingMorphWrite-Regular"
-        let url = bundle.url(forResource: name, withExtension: "ttf", subdirectory: "Resources")
-            ?? bundle.url(forResource: name, withExtension: "ttf")
-        guard let url else { return nil }
+        guard let url = bundle.url(forResource: Self.family, withExtension: "ttf") else { return nil }
         return try? Data(contentsOf: url)
+    }
+
+    // MARK: - Over the air
+
+    private struct ManifestEntry: Decodable { let family: String; let file: String; let sha256: String }
+
+    private var manifestURL: URL? {
+        (Bundle.main.object(forInfoDictionaryKey: "QiulingFontManifestURL") as? String).flatMap { URL(string: $0) }
+    }
+    private var bypassToken: String? {
+        (Bundle.main.object(forInfoDictionaryKey: "QiulingFontBypass") as? String).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    private func request(_ url: URL) -> URLRequest {
+        var r = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+        if let bypassToken { r.setValue(bypassToken, forHTTPHeaderField: "x-vercel-protection-bypass") }
+        return r
+    }
+
+    /// At most once an hour, and never blocking the reply for long: a failed
+    /// or slow check leaves the cached (or bundled) font in place.
+    private func refreshIfDue() async {
+        guard let manifestURL, bypassToken != nil else { return }
+        let last = defaults.object(forKey: "lastCheck") as? Date ?? .distantPast
+        guard Date().timeIntervalSince(last) > Self.checkInterval else { return }
+        defaults.set(Date(), forKey: "lastCheck")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request(manifestURL))
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return }
+            let manifest = try JSONDecoder().decode([String: ManifestEntry].self, from: data)
+            guard let entry = manifest[Self.buildId], entry.family == Self.family else { return }
+            let have = defaults.string(forKey: "currentSha") ?? bundledFontData().map(Self.sha)
+            guard entry.sha256 != have else { return }
+
+            let fontURL = manifestURL.deletingLastPathComponent().appendingPathComponent(entry.file)
+            let (bytes, fontResponse) = try await URLSession.shared.data(for: request(fontURL))
+            guard (fontResponse as? HTTPURLResponse)?.statusCode == 200, Self.sha(bytes) == entry.sha256 else { return }
+
+            try FileManager.default.createDirectory(at: store, withIntermediateDirectories: true)
+            let dest = store.appendingPathComponent("\(entry.sha256).ttf")
+            try bytes.write(to: dest, options: .atomic)
+            for old in (try? FileManager.default.contentsOfDirectory(at: store, includingPropertiesForKeys: nil)) ?? [] where old != dest {
+                try? FileManager.default.removeItem(at: old)
+            }
+            defaults.set(entry.sha256, forKey: "currentSha")
+        } catch {
+            // Next hour.
+        }
     }
 }
