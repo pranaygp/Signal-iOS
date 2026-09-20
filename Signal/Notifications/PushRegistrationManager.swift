@@ -74,6 +74,15 @@ public class PushRegistrationManager: NSObject, PKPushRegistryDelegate {
         }
 #endif
 
+        // Q is built without the aps-environment entitlement (Signal's server
+        // only pushes to Signal's own bundle ID), so a token never arrives:
+        // the OS fails or hangs the request, registration reads that as a
+        // generic error, and the flow loops. Declare it up front instead and
+        // take the manual-message-fetch path the app already has for this.
+        if !Self.hasPushEntitlement {
+            throw PushRegistrationError.pushNotSupported(description: "This build has no push entitlement; messages are fetched manually.")
+        }
+
         let vanillaPushToken = try await registerForVanillaPushToken(forceRotation: forceRotation, timeOutEventually: timeOutEventually)
 
         // We need the voip registry to handle voip pushes relayed from the NSE.
@@ -183,6 +192,20 @@ public class PushRegistrationManager: NSObject, PKPushRegistryDelegate {
     }
 
     // MARK: helpers
+
+    /// Whether the running binary was signed with `aps-environment`. Read from
+    /// the embedded provisioning profile, which TestFlight and development
+    /// builds carry; an App Store build has none and is assumed entitled.
+    private static let hasPushEntitlement: Bool = {
+        guard
+            let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+            let data = try? Data(contentsOf: url),
+            let text = String(data: data, encoding: .isoLatin1)
+        else {
+            return true
+        }
+        return text.contains("<key>aps-environment</key>")
+    }()
 
     // User notification settings must be registered *before* AppDelegate will
     // return any requested push tokens.
