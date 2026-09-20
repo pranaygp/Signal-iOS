@@ -122,7 +122,6 @@ struct TypeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                PracticeHeader(title: "type", subtitle: "\(QiulingFonts.buildId) · \(QiulingFonts.shared.blocks.count) ligatures", showsActions: true)
                 controls
                 if model.finished, let race = model.race {
                     ResultsView(race: race) { model.start() }
@@ -150,23 +149,20 @@ struct TypeView: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    PracticeSegment(
-                        options: RaceModel.Source.allCases.map { ($0, $0.label) },
-                        selection: Binding(get: { model.source }, set: { model.source = $0; model.start() }),
-                    )
-                    PracticeSegment(
-                        options: [15, 30, 60, 120].map { ($0, "\($0)s") },
-                        selection: Binding(get: { model.seconds }, set: { model.seconds = $0; model.start() }),
-                    )
-                }
-                .padding(.horizontal, 16)
+            Picker("Passage", selection: Binding(get: { model.source }, set: { model.source = $0; model.start() })) {
+                ForEach(RaceModel.Source.allCases, id: \.self) { Text($0.label).tag($0) }
             }
+            .pickerStyle(.segmented)
+            Picker("Duration", selection: Binding(get: { model.seconds }, set: { model.seconds = $0; model.start() })) {
+                ForEach([15, 30, 60, 120], id: \.self) { Text("\($0)s").tag($0) }
+            }
+            .pickerStyle(.segmented)
             if model.source == .own {
-                OwnTextEditor(model: model).padding(.horizontal, 16)
+                OwnTextEditor(model: model)
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
     }
 
     private var raceArea: some View {
@@ -176,7 +172,7 @@ struct TypeView: View {
                     .font(PracticeTheme.numeral).foregroundStyle(PracticeTheme.accent)
                 Spacer()
                 if let race = model.race, race.startedAt == nil {
-                    Text("tap the passage and type what you read").font(.system(size: 13)).foregroundStyle(PracticeTheme.muted)
+                    Text("tap the passage and type what you read").font(.footnote).foregroundStyle(PracticeTheme.muted)
                 }
             }
             .padding(.horizontal, 20)
@@ -200,9 +196,11 @@ struct TypeView: View {
             }
 
             HStack {
-                Button("restart") { model.start() }.buttonStyle(PracticeButtonStyle(prominent: false))
+                Button("Restart", systemImage: "arrow.counterclockwise") { model.start() }.practiceSecondaryButton()
                 Spacer()
-                Text("space skips a word · backspace fixes").font(.system(size: 11, design: .monospaced)).foregroundStyle(PracticeTheme.faint)
+                Text("\(QiulingFonts.buildId) · \(QiulingFonts.shared.blocks.count) ligatures · space skips a word")
+                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(PracticeTheme.faint)
+                    .multilineTextAlignment(.trailing)
             }
             .padding(.horizontal, 20)
         }
@@ -302,7 +300,7 @@ struct OwnTextEditor: View {
         VStack(alignment: .leading, spacing: 8) {
             PracticeEditor(text: $model.ownText, minHeight: 88)
             HStack {
-                Button("race this") { model.start() }.buttonStyle(PracticeButtonStyle())
+                Button("Race this text", systemImage: "flag.checkered") { model.start() }.practicePrimaryButton()
                 Text("folded to a–z and spaces").font(.system(size: 11, design: .monospaced)).foregroundStyle(PracticeTheme.faint)
             }
         }
@@ -368,7 +366,7 @@ struct ResultsView: View {
                 .padding(18).practiceCard().padding(.horizontal, 16)
             }
 
-            Button("again") { again() }.buttonStyle(PracticeButtonStyle()).padding(.horizontal, 20)
+            Button("Again", systemImage: "arrow.counterclockwise") { again() }.practicePrimaryButton().controlSize(.large).padding(.horizontal, 20)
         }
     }
 

@@ -49,7 +49,8 @@ struct RecallView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                PracticeHeader(title: "recall", subtitle: "Which mark is this? Decoys are one letter away from the answer.")
+                Text("Which mark is this? Decoys are one letter away from the answer.")
+                    .font(.footnote).foregroundStyle(PracticeTheme.muted).padding(.horizontal, 20).padding(.top, 8)
                 if let r = model.round {
                     Text(r.answer)
                         .font(PracticeTheme.script(96))
@@ -62,35 +63,46 @@ struct RecallView: View {
                             Button { model.pick(o) } label: {
                                 Text(o)
                                     .font(.system(size: 22, weight: .semibold, design: .monospaced)).kerning(2)
-                                    .frame(maxWidth: .infinity).padding(.vertical, 22)
-                                    .foregroundStyle(PracticeTheme.ink)
-                                    .background(cardColor(o, r), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(PracticeTheme.line))
+                                    .frame(maxWidth: .infinity).padding(.vertical, 14)
                             }
-                            .buttonStyle(.plain)
-                            .disabled(r.picked != nil)
+                            .optionButton(tint: optionTint(o, r))
                         }
                     }
                     .padding(.horizontal, 16)
+                    .animation(.snappy, value: r.picked)
                     HStack {
                         Text("\(model.hit) / \(model.seen)").font(PracticeTheme.mono).foregroundStyle(PracticeTheme.muted)
                         Spacer()
-                        Button("skip") { model.next() }.buttonStyle(PracticeButtonStyle(prominent: false))
+                        Button("Skip", systemImage: "forward") { model.next() }.practiceSecondaryButton()
                     }
                     .padding(.horizontal, 20)
                 } else {
-                    Text("This alphabet has no ligatures to tell apart.").font(.system(size: 13)).foregroundStyle(PracticeTheme.muted).padding(.horizontal, 20)
+                    Text("This alphabet has no ligatures to tell apart.").font(.footnote).foregroundStyle(PracticeTheme.muted).padding(.horizontal, 20)
                 }
             }
         }
         .onAppear { if model.round == nil { model.next() } }
     }
 
-    private func cardColor(_ o: String, _ r: RecallModel.Round) -> Color {
-        guard let picked = r.picked else { return PracticeTheme.surface }
-        if o == r.answer { return PracticeTheme.rightBackground }
-        if o == picked { return PracticeTheme.wrongBackground }
-        return PracticeTheme.surface
+    /// Neutral until an answer lands; then the answer goes green and a wrong pick red.
+    private func optionTint(_ o: String, _ r: RecallModel.Round) -> Color? {
+        guard let picked = r.picked else { return nil }
+        if o == r.answer { return PracticeTheme.good }
+        if o == picked { return PracticeTheme.accent }
+        return nil
+    }
+}
+
+@available(iOS 16, *)
+private extension View {
+    /// An answer card: a system bordered button (glass on iOS 26), tinted by result.
+    @ViewBuilder
+    func optionButton(tint: Color?) -> some View {
+        if #available(iOS 26, *) {
+            if let tint { self.buttonStyle(.glassProminent).tint(tint) } else { self.buttonStyle(.glass).tint(PracticeTheme.ink) }
+        } else {
+            if let tint { self.buttonStyle(.borderedProminent).tint(tint) } else { self.buttonStyle(.bordered).tint(PracticeTheme.ink) }
+        }
     }
 }
 
@@ -108,7 +120,8 @@ struct WriteView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                PracticeHeader(title: "write", subtitle: "Type here, then share the picture into any chat.")
+                Text("Type here, then share the picture into any chat.")
+                    .font(.footnote).foregroundStyle(PracticeTheme.muted).padding(.horizontal, 20).padding(.top, 8)
                 PracticeEditor(text: $draft).padding(.horizontal, 16)
                 Group {
                     if draft.isEmpty {
@@ -123,13 +136,12 @@ struct WriteView: View {
                     .padding(.horizontal, 16)
                 HStack(spacing: 10) {
                     if let rendered {
-                        ShareLink(item: Image(uiImage: rendered), preview: SharePreview("Qiuling", image: Image(uiImage: rendered))) {
-                            Text("share image")
-                        }.buttonStyle(PracticeButtonStyle())
+                        ShareLink(item: Image(uiImage: rendered), preview: SharePreview("Qiuling", image: Image(uiImage: rendered)))
+                            .practicePrimaryButton()
                     }
-                    Button("copy image") {
+                    Button("Copy", systemImage: "doc.on.doc") {
                         if let img = render() { UIPasteboard.general.image = img; status = "copied — paste it into the chat" }
-                    }.buttonStyle(PracticeButtonStyle(prominent: false))
+                    }.practiceSecondaryButton()
                     Text(status).font(.system(size: 11, design: .monospaced)).foregroundStyle(PracticeTheme.muted)
                 }
                 .padding(.horizontal, 20)
@@ -168,7 +180,8 @@ struct ProgressTabView: View {
         let sessions = store.book.sessions
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                PracticeHeader(title: "progress", subtitle: sessions.isEmpty ? "Race once and this fills in." : "\(sessions.count) runs · best \(store.best) wpm")
+                Text(sessions.isEmpty ? "Race once and this fills in." : "\(sessions.count) runs · best \(store.best) wpm")
+                    .font(.footnote).foregroundStyle(PracticeTheme.muted).padding(.horizontal, 20).padding(.top, 8)
                 if !sessions.isEmpty {
                     HStack(alignment: .firstTextBaseline, spacing: 28) {
                         big("\(sessions.last!.wpm)", "last wpm")
@@ -225,7 +238,7 @@ struct ProgressTabView: View {
                         .padding(18).practiceCard().padding(.horizontal, 16)
                     }
 
-                    Button("reset this alphabet") { confirmReset = true }.buttonStyle(PracticeButtonStyle(prominent: false)).padding(.horizontal, 20)
+                    Button("Reset this alphabet", systemImage: "trash", role: .destructive) { confirmReset = true }.practiceSecondaryButton().padding(.horizontal, 20)
                         .confirmationDialog("Forget every run and mark for \(QiulingFonts.buildId)?", isPresented: $confirmReset, titleVisibility: .visible) {
                             Button("Reset", role: .destructive) { store.reset() }
                         }
@@ -258,19 +271,20 @@ struct ReadWebView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                PracticeHeader(title: "read the web", subtitle: "A Safari bookmark that sets any page in the script, at twice its size. Tap it again to put the page back.")
+                Text("A Safari bookmark that sets any page in the script, at twice its size. Tap it again to put the page back.")
+                    .font(.footnote).foregroundStyle(PracticeTheme.muted).padding(.horizontal, 20).padding(.top, 8)
                 VStack(alignment: .leading, spacing: 12) {
                     Text("1. Copy the bookmark link below.\n2. In Safari, bookmark any page (share sheet → Add Bookmark).\n3. Bookmarks → Edit → choose it → paste the link over its address.\n4. From then on, tap it in Bookmarks while on any page.")
                         .font(.system(size: 14)).foregroundStyle(PracticeTheme.ink).lineSpacing(4)
                     Text("The font travels inside the bookmark, so nothing is installed or fetched, and it carries whatever alphabet this app currently has.")
                         .font(.system(size: 13)).foregroundStyle(PracticeTheme.muted)
                     HStack {
-                        Button("copy bookmark link") {
+                        Button("Copy bookmark link", systemImage: "link") {
                             if let link = Self.bookmarklet() {
                                 UIPasteboard.general.setValue(link, forPasteboardType: UTType.plainText.identifier)
                                 status = "copied (\(link.count / 1024) KB)"
                             } else { status = "no font available" }
-                        }.buttonStyle(PracticeButtonStyle())
+                        }.practicePrimaryButton()
                         Text(status).font(.system(size: 11, design: .monospaced)).foregroundStyle(PracticeTheme.muted)
                     }
                 }

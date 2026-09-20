@@ -43,12 +43,17 @@ changed file replaces the old registration.
 
 A fourth tab in the home bar (Chats · Calls · Practice · Stories) carries the
 reading trainer natively — SwiftUI, Liquid Glass on iOS 26, the Vermilion
-palette — with the same features as `web/read.html`. The tab lands straight
-on the type race (sentences, words, or your own text; 15–120 s); the header's
-icons push recall (a mark and four spellings) and progress across sittings,
-and its "…" menu holds write (English in, a Qiuling picture out, to share
-into any chat) and the Safari bookmark that sets pages in the script. One
-bottom bar — Signal's — throughout. It lives in `Signal/Practice/`:
+palette — with the same features as `web/read.html`. It is built like the
+other home tabs: the system navigation bar carries the title, the avatar and
+settings button, and the actions; sections push through Signal's navigation
+controller. The tab lands straight on the type race (sentences, words, or
+your own text; 15–120 s); the bar's icons push recall (a mark and four
+spellings) and progress across sittings, and its "…" menu holds write
+(English in, a Qiuling picture out, to share into any chat) and the Safari
+bookmark that sets pages in the script. Controls are the system's — segmented
+pickers, glass buttons on iOS 26 with bordered fallbacks, menus, Charts,
+ShareLink — tinted with the brand red; only the content cards are custom. It
+lives in `Signal/Practice/`:
 
 - `PracticeEngine.swift` — the race engine ported from `web/read.js`, plus the
   segmenter. Rather than carrying the ligature rules, it asks CoreText how the
@@ -56,10 +61,10 @@ bottom bar — Signal's — throughout. It lives in `Signal/Practice/`:
   screen for whatever alphabet is current, downloaded copies included. The
   corpus (`Resources/corpus.txt`, the trainer's) and per-alphabet stats
   (`Application Support/Practice/<build>.json`) sit beside it.
-- `PracticeView.swift`, `TypeView.swift`, `PracticeSections.swift`,
-  `PracticeTheme.swift` — the screens.
-- `PracticeHostViewController.swift` — the UIKit shell, and the
-  `-QiulingPracticeOnly 1` launch path.
+- `TypeView.swift`, `PracticeSections.swift`, `PracticeTheme.swift` — the
+  screens.
+- `PracticeHostViewController.swift` — the tab's view controller (nav items,
+  pushes), and the `-QiulingPracticeOnly 1` launch path.
 
 ### Trying it in the simulator
 

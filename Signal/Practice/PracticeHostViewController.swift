@@ -8,11 +8,16 @@ import SignalUI
 import SwiftUI
 import UIKit
 
-/// The practice tab's UIKit shell around the SwiftUI trainer.
+/// The Practice tab. Built like the other home tabs: the system navigation
+/// bar carries the title, the avatar/settings button and the actions, and
+/// the sections are pushed through Signal's navigation controller. The type
+/// race is the tab's content.
 @available(iOS 16, *)
-final class PracticeHostViewController: UIHostingController<PracticeView> {
+final class PracticeHostViewController: UIHostingController<TypeView>, HomeTabViewController {
+    private let race = RaceModel()
+
     init() {
-        super.init(rootView: PracticeView())
+        super.init(rootView: TypeView(model: race))
         title = "Practice"
     }
 
@@ -22,12 +27,51 @@ final class PracticeHostViewController: UIHostingController<PracticeView> {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Brand.background
+
+        if !PracticeOnlyLaunch.isRequested {
+            navigationItem.leftBarButtonItem = createSettingsBarButtonItem(
+                databaseStorage: SSKEnvironment.shared.databaseStorageRef,
+                buildActions: { [$0] },
+                showAppSettings: { [weak self] in
+                    self?.presentFormSheet(AppSettingsViewController.inModalNavigationController(), animated: true)
+                },
+            )
+        }
+
+        let more = UIMenu(children: [
+            UIAction(title: "Write a message", image: UIImage(systemName: "square.and.pencil")) { [weak self] _ in
+                self?.push(WriteView(), title: "Write")
+            },
+            UIAction(title: "Read the web in Qiuling", image: UIImage(systemName: "safari")) { [weak self] _ in
+                self?.push(ReadWebView(), title: "Read the web")
+            },
+        ])
+        let recall = UIBarButtonItem(image: UIImage(systemName: "eye"), primaryAction: UIAction { [weak self] _ in
+            self?.push(RecallView(), title: "Recall")
+        })
+        recall.accessibilityLabel = "Recall"
+        let progress = UIBarButtonItem(image: UIImage(systemName: "chart.xyaxis.line"), primaryAction: UIAction { [weak self] _ in
+            self?.push(ProgressTabView(), title: "Progress")
+        })
+        progress.accessibilityLabel = "Progress"
+        let moreItem = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), menu: more)
+        moreItem.accessibilityLabel = "More"
+        navigationItem.rightBarButtonItems = [moreItem, progress, recall]
     }
 
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        // The SwiftUI stack inside draws its own bars; the outer one would double them.
-        navigationController?.setNavigationBarHidden(true, animated: animated)
+    private func push(_ view: some View, title: String) {
+        let controller = PracticeSectionViewController(rootView: AnyView(view))
+        controller.title = title
+        navigationController?.pushViewController(controller, animated: true)
+    }
+}
+
+/// One pushed section: the paper background behind the SwiftUI content.
+@available(iOS 16, *)
+final class PracticeSectionViewController: UIHostingController<AnyView> {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = Brand.background
     }
 }
 
@@ -49,9 +93,7 @@ enum PracticeOnlyLaunch {
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }
         if #available(iOS 16, *) {
-            let nav = UINavigationController(rootViewController: PracticeHostViewController())
-            nav.setNavigationBarHidden(true, animated: false)
-            window.rootViewController = nav
+            window.rootViewController = OWSNavigationController(rootViewController: PracticeHostViewController())
         } else {
             window.rootViewController = UIViewController()
         }

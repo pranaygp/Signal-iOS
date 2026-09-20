@@ -3639,7 +3639,6 @@
 		F92074762888648A00B7F087 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F92074752888648A00B7F087 /* AppDelegate.swift */; };
 		Q1UL4587C74600D2C216D4DE /* PracticeEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1ULEE6227C62F9FCE4D8DF5 /* PracticeEngine.swift */; };
 		Q1ULCC7F8186CAA2120DDCA1 /* PracticeTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL811FC51717627B26E21A /* PracticeTheme.swift */; };
-		Q1ULA3237E520B07728F2910 /* PracticeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL005552E488BBDF8175BA /* PracticeView.swift */; };
 		Q1UL4CF3047944ED02E56885 /* TypeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL6777A5A76F08EF2D89A2 /* TypeView.swift */; };
 		Q1UL2F64EF682136D0E39F8C /* PracticeSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1ULDD6C667CD92EC80FDD30 /* PracticeSections.swift */; };
 		Q1UL4BE60C42328D3D854A55 /* PracticeHostViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1ULC6A83494FED126454217 /* PracticeHostViewController.swift */; };
@@ -8058,7 +8057,6 @@
 		F92074752888648A00B7F087 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		Q1ULEE6227C62F9FCE4D8DF5 /* PracticeEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeEngine.swift; sourceTree = "<group>"; };
 		Q1UL811FC51717627B26E21A /* PracticeTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeTheme.swift; sourceTree = "<group>"; };
-		Q1UL005552E488BBDF8175BA /* PracticeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeView.swift; sourceTree = "<group>"; };
 		Q1UL6777A5A76F08EF2D89A2 /* TypeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypeView.swift; sourceTree = "<group>"; };
 		Q1ULDD6C667CD92EC80FDD30 /* PracticeSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeSections.swift; sourceTree = "<group>"; };
 		Q1ULC6A83494FED126454217 /* PracticeHostViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeHostViewController.swift; sourceTree = "<group>"; };
@@ -16063,7 +16061,6 @@
 			children = (
 				Q1ULEE6227C62F9FCE4D8DF5 /* PracticeEngine.swift */,
 				Q1UL811FC51717627B26E21A /* PracticeTheme.swift */,
-				Q1UL005552E488BBDF8175BA /* PracticeView.swift */,
 				Q1UL6777A5A76F08EF2D89A2 /* TypeView.swift */,
 				Q1ULDD6C667CD92EC80FDD30 /* PracticeSections.swift */,
 				Q1ULC6A83494FED126454217 /* PracticeHostViewController.swift */,
@@ -18507,7 +18504,6 @@
 				F92074762888648A00B7F087 /* AppDelegate.swift in Sources */,
 				Q1UL4587C74600D2C216D4DE /* PracticeEngine.swift in Sources */,
 				Q1ULCC7F8186CAA2120DDCA1 /* PracticeTheme.swift in Sources */,
-				Q1ULA3237E520B07728F2910 /* PracticeView.swift in Sources */,
 				Q1UL4CF3047944ED02E56885 /* TypeView.swift in Sources */,
 				Q1UL2F64EF682136D0E39F8C /* PracticeSections.swift in Sources */,
 				Q1UL4BE60C42328D3D854A55 /* PracticeHostViewController.swift in Sources */,
