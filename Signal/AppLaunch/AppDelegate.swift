@@ -156,7 +156,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         // A beat after the home screen, so the one-time font prompt does not
         // land on top of registration or the notification permission sheet.
         appReadiness.runNowOrWhenUIDidBecomeReadySync {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { QiulingFontInstaller.installIfNeeded() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { QiulingFonts.shared.start() }
         }
 
         MessageFetchBGRefreshTask.register(appReadiness: appReadiness)

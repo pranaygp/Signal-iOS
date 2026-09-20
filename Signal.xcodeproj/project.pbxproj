@@ -1569,6 +1569,7 @@
 		7677E40729F7472800AC6A75 /* ShareAppExtensionContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7677E40629F7472800AC6A75 /* ShareAppExtensionContext.swift */; };
 		7677E40D29F75C4200AC6A75 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7677E40C29F75C4200AC6A75 /* Theme.swift */; };
 		Q1UL1NG00000000000BRANDB /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL1NG000000000000BRAND /* Brand.swift */; };
+		Q1UL1NG00000000000F0NTSB /* QiulingFonts.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL1NG000000000000F0NTS /* QiulingFonts.swift */; };
 		7677E40F29F79BF300AC6A75 /* SAEScreenLockViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7677E40E29F79BF300AC6A75 /* SAEScreenLockViewController.swift */; };
 		7677E41129F7A60500AC6A75 /* ScreenLockViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7677E41029F7A60500AC6A75 /* ScreenLockViewController.swift */; };
 		7677E41329F84C2100AC6A75 /* ScreenLockUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7677E41229F84C2100AC6A75 /* ScreenLockUI.swift */; };
@@ -1670,7 +1671,7 @@
 		8852572C27DD40870032073C /* HomeTabBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8852572B27DD40870032073C /* HomeTabBarController.swift */; };
 		8852759527E1BA55003F2F9B /* EBGaramond-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 8852759427E1BA55003F2F9B /* EBGaramond-Regular.ttf */; };
 		8852759627E1BA5B003F2F9B /* Parisienne-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 8852758E27E1B9C5003F2F9B /* Parisienne-Regular.ttf */; };
-		Q1UL1NG0000000000000B1LD /* QiulingOneFiveWrite-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = Q1UL1NG0000000000000F0N7 /* QiulingOneFiveWrite-Regular.ttf */; };
+		Q1UL1NG0000000000000B1LD /* QiulingMorphWrite-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = Q1UL1NG0000000000000F0N7 /* QiulingMorphWrite-Regular.ttf */; };
 		8852759727E1BA64003F2F9B /* Inter-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 8852758B27E1B7F4003F2F9B /* Inter-Variable.ttf */; };
 		8852759927E1BA7D003F2F9B /* BarlowCondensed-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 8852759827E1BA7D003F2F9B /* BarlowCondensed-Medium.ttf */; };
 		8852759A27E1BA93003F2F9B /* fontawesome-webfont.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 34330A591E7875FB00DF2FB9 /* fontawesome-webfont.ttf */; };
@@ -3635,7 +3636,6 @@
 		F9189AC02947D9F300CD8EF6 /* DonationViewsUtil+LocalizedStripeError.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9189ABF2947D9F300CD8EF6 /* DonationViewsUtil+LocalizedStripeError.swift */; };
 		F9198485299AA7FC007FD5E4 /* RegistrationPhoneNumberInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9198484299AA7FC007FD5E4 /* RegistrationPhoneNumberInputView.swift */; };
 		F92074762888648A00B7F087 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F92074752888648A00B7F087 /* AppDelegate.swift */; };
-		Q1UL1NG0000000000000F1B5 /* QiulingFontInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL1NG0000000000000F1N5 /* QiulingFontInstaller.swift */; };
 		F924A68228F8706200E368C8 /* DonationReadMoreSheetViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F924A68128F8706200E368C8 /* DonationReadMoreSheetViewController.swift */; };
 		F9262C46289462F600063502 /* SignalServiceKit-Prefix.pch in Headers */ = {isa = PBXBuildFile; fileRef = F9C985D2289459860029F9AD /* SignalServiceKit-Prefix.pch */; };
 		F927478828CFE9B10056EAFE /* test-png.png in Resources */ = {isa = PBXBuildFile; fileRef = F927478728CFE9B10056EAFE /* test-png.png */; };
@@ -5871,6 +5871,7 @@
 		7677E40629F7472800AC6A75 /* ShareAppExtensionContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareAppExtensionContext.swift; sourceTree = "<group>"; };
 		7677E40C29F75C4200AC6A75 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		Q1UL1NG000000000000BRAND /* Brand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brand.swift; sourceTree = "<group>"; };
+		Q1UL1NG000000000000F0NTS /* QiulingFonts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QiulingFonts.swift; sourceTree = "<group>"; };
 		7677E40E29F79BF300AC6A75 /* SAEScreenLockViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SAEScreenLockViewController.swift; sourceTree = "<group>"; };
 		7677E41029F7A60500AC6A75 /* ScreenLockViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenLockViewController.swift; sourceTree = "<group>"; };
 		7677E41229F84C2100AC6A75 /* ScreenLockUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenLockUI.swift; sourceTree = "<group>"; };
@@ -5981,7 +5982,7 @@
 		8852572B27DD40870032073C /* HomeTabBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeTabBarController.swift; sourceTree = "<group>"; };
 		8852758B27E1B7F4003F2F9B /* Inter-Variable.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Inter-Variable.ttf"; sourceTree = "<group>"; };
 		8852758E27E1B9C5003F2F9B /* Parisienne-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Parisienne-Regular.ttf"; sourceTree = "<group>"; };
-		Q1UL1NG0000000000000F0N7 /* QiulingOneFiveWrite-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "QiulingOneFiveWrite-Regular.ttf"; sourceTree = "<group>"; };
+		Q1UL1NG0000000000000F0N7 /* QiulingMorphWrite-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "QiulingMorphWrite-Regular.ttf"; sourceTree = "<group>"; };
 		8852759427E1BA55003F2F9B /* EBGaramond-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "EBGaramond-Regular.ttf"; sourceTree = "<group>"; };
 		8852759827E1BA7D003F2F9B /* BarlowCondensed-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "BarlowCondensed-Medium.ttf"; sourceTree = "<group>"; };
 		885275BF27E26775003F2F9B /* TextAttachmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextAttachmentView.swift; sourceTree = "<group>"; };
@@ -8045,7 +8046,6 @@
 		F9189ABF2947D9F300CD8EF6 /* DonationViewsUtil+LocalizedStripeError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DonationViewsUtil+LocalizedStripeError.swift"; sourceTree = "<group>"; };
 		F9198484299AA7FC007FD5E4 /* RegistrationPhoneNumberInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegistrationPhoneNumberInputView.swift; sourceTree = "<group>"; };
 		F92074752888648A00B7F087 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		Q1UL1NG0000000000000F1N5 /* QiulingFontInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QiulingFontInstaller.swift; sourceTree = "<group>"; };
 		F924A68128F8706200E368C8 /* DonationReadMoreSheetViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DonationReadMoreSheetViewController.swift; sourceTree = "<group>"; };
 		F927478728CFE9B10056EAFE /* test-png.png */ = {isa = PBXFileReference; explicitFileType = compiled; path = "test-png.png"; sourceTree = "<group>"; };
 		F927478928CFE9C60056EAFE /* test-png-with-metadata.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "test-png-with-metadata.png"; sourceTree = "<group>"; };
@@ -9031,7 +9031,7 @@
 				B9A87A372A9E34BD009FCA13 /* Hatsuishi-UPM800.otf */,
 				8852758B27E1B7F4003F2F9B /* Inter-Variable.ttf */,
 				8852758E27E1B9C5003F2F9B /* Parisienne-Regular.ttf */,
-				Q1UL1NG0000000000000F0N7 /* QiulingOneFiveWrite-Regular.ttf */,
+				Q1UL1NG0000000000000F0N7 /* QiulingMorphWrite-Regular.ttf */,
 				B982ACFE2BA8FD2A00AD7E81 /* SignalSymbols-Bold.otf */,
 				B982AD002BA8FD3100AD7E81 /* SignalSymbols-Light.otf */,
 				B96D6D782B9F83270039EB99 /* SignalSymbols-Regular.otf */,
@@ -9313,6 +9313,7 @@
 				34A954D4271B4F3E00B05242 /* Theme+Icons.swift */,
 				7677E40C29F75C4200AC6A75 /* Theme.swift */,
 				Q1UL1NG000000000000BRAND /* Brand.swift */,
+				Q1UL1NG000000000000F0NTS /* QiulingFonts.swift */,
 				66FC638329E2201500F00DAC /* ThemedColor+Theme.swift */,
 				B9F9ABF62CB98844001AE92D /* UIColor+Signal.swift */,
 			);
@@ -9965,7 +9966,6 @@
 			isa = PBXGroup;
 			children = (
 				F92074752888648A00B7F087 /* AppDelegate.swift */,
-				Q1UL1NG0000000000000F1N5 /* QiulingFontInstaller.swift */,
 				34D99CE3217509C1000AFB39 /* AppEnvironment.swift */,
 				349C3636233D198300D52012 /* LaunchJobs.swift */,
 				4542DF53208D40AC007B4E76 /* LoadingViewController.swift */,
@@ -16463,7 +16463,7 @@
 				B9A87A382A9E34BD009FCA13 /* Hatsuishi-UPM800.otf in Resources */,
 				8852759727E1BA64003F2F9B /* Inter-Variable.ttf in Resources */,
 				8852759627E1BA5B003F2F9B /* Parisienne-Regular.ttf in Resources */,
-				Q1UL1NG0000000000000B1LD /* QiulingOneFiveWrite-Regular.ttf in Resources */,
+				Q1UL1NG0000000000000B1LD /* QiulingMorphWrite-Regular.ttf in Resources */,
 				B982ACFF2BA8FD2A00AD7E81 /* SignalSymbols-Bold.otf in Resources */,
 				B982AD012BA8FD3200AD7E81 /* SignalSymbols-Light.otf in Resources */,
 				B96D6D792B9F83270039EB99 /* SignalSymbols-Regular.otf in Resources */,
@@ -18369,6 +18369,7 @@
 				34A954DC271B4F3E00B05242 /* Theme+Icons.swift in Sources */,
 				7677E40D29F75C4200AC6A75 /* Theme.swift in Sources */,
 				Q1UL1NG00000000000BRANDB /* Brand.swift in Sources */,
+				Q1UL1NG00000000000F0NTSB /* QiulingFonts.swift in Sources */,
 				66FC638429E2201500F00DAC /* ThemedColor+Theme.swift in Sources */,
 				3402AA62271D9DEC0084CBAE /* ThreadUtil+SignalUI.swift in Sources */,
 				3402AA65271D9DEC0084CBAE /* ThreadViewModel.swift in Sources */,
@@ -18458,7 +18459,6 @@
 				32E958AA25C12B3800BF12AD /* AnimatedProgressView.swift in Sources */,
 				50A76F562AF573CE00FCF02D /* AppActivePrecondition.swift in Sources */,
 				F92074762888648A00B7F087 /* AppDelegate.swift in Sources */,
-				Q1UL1NG0000000000000F1B5 /* QiulingFontInstaller.swift in Sources */,
 				8827004E23208A1900F01C46 /* AppearanceSettingsTableViewController.swift in Sources */,
 				34D99CE4217509C2000AFB39 /* AppEnvironment.swift in Sources */,
 				052D178A2C7E60340023D56F /* AppIcon.swift in Sources */,

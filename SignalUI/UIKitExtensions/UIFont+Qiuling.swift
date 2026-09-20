@@ -11,13 +11,12 @@ import UIKit
 /// *says* is set in it — bubbles, the compose box, chat-list previews — so
 /// the rest of the app stays legible while the screen is not.
 ///
-/// The font file lives in `SignalUI/Fonts` and is registered with the other
-/// bundled fonts at launch. It comes from the qiuling repo's
-/// `node tools/build_font.js --alphabet v15`; drop in a newer build and
-/// change `qiulingFontName` to switch alphabets.
+/// The bundled file lives in `SignalUI/Fonts` and comes from the qiuling
+/// repo's `node tools/build_font.js --alphabet morph`; `QiulingFonts` swaps in
+/// a newer copy fetched from the trainer when there is one.
 public extension UIFont {
 
-    static let qiulingFontName = "QiulingOneFiveWrite-Regular"
+    static let qiulingFontName = QiulingFonts.family
 
     /// Qiuling marks are dense and sit low in the em, so the script reads
     /// comfortably at roughly twice the point size Latin does.

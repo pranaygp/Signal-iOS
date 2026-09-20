@@ -10,14 +10,34 @@ Everything else in the app is unchanged. The change is one Swift file,
 `SignalUI/UIKitExtensions/UIFont+Qiuling.swift`, five one-line call-site
 edits, and the font in `SignalUI/Fonts`.
 
-## The font, phone-wide
+## The font: bundled, phone-wide, and over the air
 
-On first launch (three seconds after the chat list appears) the app asks to
-install its bundled Qiuling for the whole phone — Apple's font-provider
-mechanism, so it lands under Settings › General › Fonts and every app with a
-font menu can use it. When a new build ships a changed font file the old
-registration is replaced silently. `QiulingFontInstaller.swift` is the whole
-of it; the `com.apple.developer.user-fonts` entitlement is what allows it.
+The bundled font is **Qiuling Morph** (`QiulingMorphWrite-Regular`, from
+`node tools/build_font.js --alphabet morph` in the qiuling repo). Message text
+is set in it; nothing else in the app is.
+
+`QiulingFonts` (SignalUI) keeps it current without an app release. Every font
+build publishes `web/fonts/<family>.ttf` and `web/fonts/manifest.json` into the
+trainer; on launch and when the app becomes active (at most hourly) the app
+reads the manifest, and if the hash for build id `morph` differs from what it
+has, downloads the TTF, verifies it, swaps it in for the running process and
+re-registers it for the whole phone. So: rebuild the font, push `main` (which
+deploys the trainer), open the app — new glyphs. The bundled copy is the
+fallback and what a clean checkout builds with.
+
+The trainer is behind Deployment Protection, so the app sends the project's
+bypass token. **The token is never in source**: `Config/qiuling.env`
+(gitignored) holds `QIULING_FONT_BYPASS` and `QIULING_FONT_MANIFEST_URL`, and
+`Scripts/qiuling-ship.sh` passes them as build settings that land in
+`Info.plist`. Rotate it under the Vercel project's Deployment Protection
+settings if a build ever leaks. Without the two settings the app just uses its
+bundled font.
+
+Phone-wide installation uses Apple's font-provider entitlement
+(`com.apple.developer.user-fonts`): the current copy is registered
+persistently, so it appears under Settings › General › Fonts for Pages, Word
+and any app with a font menu. iOS confirms with the user the first time; a
+changed file replaces the old registration.
 
 ## Ship to TestFlight
 

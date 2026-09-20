@@ -12,6 +12,9 @@
 #   ASC_KEY_ID       App Store Connect API key ID
 #   ASC_ISSUER_ID    App Store Connect API issuer ID
 #   ASC_KEY_PATH     path to the AuthKey_XXXX.p8 file
+#   QIULING_FONT_MANIFEST_URL, QIULING_FONT_BYPASS   (optional) where the app fetches font
+#                    updates, and the trainer's Deployment Protection bypass token; baked
+#                    into Info.plist. Without them the app only uses its bundled font.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -51,6 +54,7 @@ xcodebuild archive \
   -destination generic/platform=iOS -archivePath "$ARCHIVE" \
   "${SIGN_AUTH[@]}" \
   DEVELOPMENT_TEAM="$TEAM_ID" SIGNAL_BUNDLEID_PREFIX="$BUNDLE_PREFIX" SIGNAL_MERCHANTID="" \
+  QIULING_FONT_MANIFEST_URL="${QIULING_FONT_MANIFEST_URL:-}" QIULING_FONT_BYPASS="${QIULING_FONT_BYPASS:-}" \
   CODE_SIGN_STYLE=Automatic PROVISIONING_PROFILE_SPECIFIER="" \
   | tee build/archive.log | grep -E "error:|warning: .*(Qiuling|provision)|\*\* ARCHIVE" || true
 [ -d "$ARCHIVE" ] || { echo "archive failed; see build/archive.log" >&2; exit 1; }

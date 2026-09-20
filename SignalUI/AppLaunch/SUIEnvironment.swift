@@ -69,13 +69,16 @@ public class SUIEnvironment: NSObject {
         else {
             return owsFailDebug("Failed to load fonts from bundle.")
         }
+        _ = QiulingFonts.shared.registerCurrentForProcess()
         for url in ttfFontURLs + otfFontURLs {
+            if QiulingFonts.shared.providesFont(atBundleURL: url) { continue }
             var error: Unmanaged<CFError>?
             guard CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error) else {
                 let errorMessage = (error?.takeRetainedValue()).map { String(describing: $0) } ?? "(unknown error)"
                 owsFailDebug("Could not register font with url \(url): \(errorMessage)")
                 continue
             }
+            QiulingFonts.shared.noteBundledFontRegistered(at: url)
         }
     }
 }
