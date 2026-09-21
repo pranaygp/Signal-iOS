@@ -71,26 +71,26 @@ struct KeySpec {
 /// us. They follow the iOS 26 system keyboard as measured on a 402pt iPhone
 /// — the device's, not the simulator's, which draws a different keyboard:
 /// 6pt outer margins, ten 34pt keys with 5.25pt gaps filling the width, 40pt
-/// keys on a 50pt pitch, 8pt corners, and the last row ending 76pt above the
-/// bottom of the screen. Other widths scale the key and gap together so a
-/// row still fills the width exactly; iPad keeps the proportions on taller
-/// keys.
+/// keys on a 50pt pitch and 8pt corners. Other widths scale the key and gap
+/// together so a row still fills the width exactly; iPad keeps the
+/// proportions on taller keys. The globe-and-microphone dock iOS 26 draws
+/// under third-party keyboards is the host's, outside the view we are given,
+/// so nothing here accounts for it.
 struct KeyboardMetrics {
     let width: CGFloat
     let isLandscape: Bool
     let isPad: Bool
     let safeLeft: CGFloat
     let safeRight: CGFloat
+    /// The height the host actually gave us, when it is less than the layout
+    /// wants: keys and gaps shrink together to fit rather than a row being
+    /// cut off. Nil, or anything taller, leaves the natural sizes.
+    var heightLimit: CGFloat?
 
     /// The system's ratio of gap to key: 5.25 to 34 on a 390pt row.
     private static let gapPerKey: CGFloat = 5.25 / 34
     private static let referenceKeyHeight: CGFloat = 40
     private static let referenceWidth: CGFloat = 402
-    /// Where the system keyboard's last row ends, measured up from the bottom
-    /// of the screen on an iPhone in portrait: the dock and its gap. The host
-    /// reports the dock as a bottom safe-area inset, but a few points short of
-    /// where it draws, so this is the floor the layout keeps clear.
-    static let phoneDockClearance: CGFloat = 76
 
     var edgeLeft: CGFloat { 6 + (isLandscape && !isPad ? safeLeft : 0) }
     var edgeRight: CGFloat { 6 + (isLandscape && !isPad ? safeRight : 0) }
@@ -104,30 +104,37 @@ struct KeyboardMetrics {
     /// row 3's first or last letter, as the system's do, which with the
     /// letters block centred is 2.5 keys and 1.5 gaps.
     var cornerKeyWidth: CGFloat { 2.5 * keyWidth + 1.5 * gap }
-    var keyHeight: CGFloat {
+    private var naturalKeyHeight: CGFloat {
         if isPad { return isLandscape ? 76 : 56 }
         // Wider phones get proportionally taller keys, as the system's do.
         return isLandscape ? 32 : (Self.referenceKeyHeight * width / Self.referenceWidth).rounded()
     }
-    var verticalGap: CGFloat {
+    private var naturalVerticalGap: CGFloat {
         if isPad { return 12 }
         return isLandscape ? 7 : 10
     }
-    var topInset: CGFloat { 6 }
-    /// Below the last row: the rows end at the dock clearance, so nothing more.
-    var bottomInset: CGFloat { isPad ? 6 : (isLandscape ? 8 : 0) }
-    /// How much of the view's bottom the layout leaves alone: the host's
-    /// reported inset, or the measured dock clearance on a portrait iPhone if
-    /// that is larger.
-    func bottomClearance(reportedInset: CGFloat) -> CGFloat {
-        isPad || isLandscape ? reportedInset : max(reportedInset, Self.phoneDockClearance)
+    private var naturalTopInset: CGFloat { 6 }
+    /// Below the last row: the rows end where the view does, so nothing more.
+    private var naturalBottomInset: CGFloat { isPad ? 6 : (isLandscape ? 8 : 0) }
+    private var naturalKeyAreaHeight: CGFloat { naturalTopInset + 4 * naturalKeyHeight + 3 * naturalVerticalGap + naturalBottomInset }
+    /// One, unless the host gave less than the natural layout needs.
+    private var verticalScale: CGFloat {
+        guard let heightLimit else { return 1 }
+        let room = heightLimit - stripHeight
+        return room < naturalKeyAreaHeight ? max(0.5, room / naturalKeyAreaHeight) : 1
     }
+
+    var keyHeight: CGFloat { (naturalKeyHeight * verticalScale).rounded() }
+    var verticalGap: CGFloat { naturalVerticalGap * verticalScale }
+    var topInset: CGFloat { naturalTopInset * verticalScale }
+    var bottomInset: CGFloat { naturalBottomInset * verticalScale }
     var rowPitch: CGFloat { keyHeight + verticalGap }
     var stripHeight: CGFloat { isLandscape && !isPad ? 38 : 44 }
-    /// Four rows at their pitch inside the insets; the dock, when the host
-    /// draws one, sits below this in the safe-area inset.
+    /// Four rows at their pitch inside the insets.
     var keyAreaHeight: CGFloat { topInset + 4 * keyHeight + 3 * verticalGap + bottomInset }
     var totalHeight: CGFloat { stripHeight + keyAreaHeight }
+    /// What the keyboard asks the host for: the layout at its natural size.
+    var naturalHeight: CGFloat { stripHeight + naturalKeyAreaHeight }
     /// 8pt on a 43pt key, scaled with the key so iPad's taller keys stay as round.
     var cornerRadius: CGFloat { 8 * keyHeight / Self.referenceKeyHeight }
 

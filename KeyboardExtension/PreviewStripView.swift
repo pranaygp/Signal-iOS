@@ -50,11 +50,6 @@ final class PreviewStripView: UIView {
     private let pictureButton = StripButton()
     private let notice = UILabel()
     private var noticeTimer: Timer?
-    /// Layout numbers for reading off a device screenshot; nil hides the line.
-    var diagnostics: String? {
-        didSet { diagnosticsLabel.text = diagnostics; diagnosticsLabel.isHidden = diagnostics == nil; setNeedsLayout() }
-    }
-    private let diagnosticsLabel = UILabel()
     private var copiedTimer: Timer?
 
     private static let edge: CGFloat = 12
@@ -135,14 +130,6 @@ final class PreviewStripView: UIView {
         let h = bounds.height
         let edge = Self.edge
         let gap = Self.gap
-        if diagnosticsLabel.superview == nil {
-            diagnosticsLabel.font = .monospacedSystemFont(ofSize: 9, weight: .regular)
-            diagnosticsLabel.textColor = .systemRed
-            diagnosticsLabel.isHidden = diagnostics == nil
-            addSubview(diagnosticsLabel)
-        }
-        diagnosticsLabel.frame = CGRect(x: edge, y: 0, width: bounds.width - 2 * edge, height: 11)
-        bringSubviewToFront(diagnosticsLabel)
         switch mode {
         case .normal:
             bar.frame = bounds

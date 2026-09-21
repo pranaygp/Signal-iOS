@@ -13,7 +13,7 @@ cd "$(dirname "$0")/.."
 [ -f Config/qiuling.env ] && source Config/qiuling.env
 XCODE26=${XCODE26:-$(ls -d /Applications/Xcode-26.*.app 2>/dev/null | sort -V | tail -1)}
 export DEVELOPER_DIR="$XCODE26/Contents/Developer"
-SIM=${SIM:-iPhone 17 Pro}
+SIM=${SIM:-iPhone 17 Pro Max}
 DERIVED=${DERIVED:-build/DerivedData}
 APP="$DERIVED/Build/Products/Debug-iphonesimulator/Signal.app"
 BUNDLE_PREFIX=${BUNDLE_PREFIX:-gp.pranay}

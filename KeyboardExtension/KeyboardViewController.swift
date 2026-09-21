@@ -123,9 +123,15 @@ final class KeyboardViewController: UIInputViewController {
 
     // MARK: Lifecycle
 
+    /// Ours from the start, so the audio-feedback conformance is on the view
+    /// the system actually hosts.
+    override func loadView() {
+        inputView = QiulingInputView(frame: .zero, inputViewStyle: .keyboard)
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        inputView = QiulingInputView(frame: .zero, inputViewStyle: .keyboard)
+        requestHeight()
         QiulingFont.shared.register()
         fontAvailable = QiulingFont.shared.isAvailable
 
@@ -153,7 +159,19 @@ final class KeyboardViewController: UIInputViewController {
         calloutLayer.clipsToBounds = false
         calloutLayer.isAccessibilityElement = false
         calloutLayer.accessibilityElementsHidden = true
+        // Pinned with constraints rather than a frame, and not only because it
+        // fills the view: the system takes a keyboard's height from its view
+        // only when that view lays out with Auto Layout. A height constraint
+        // alone on a view of frame-placed subviews is never read, and every
+        // host keeps its default height (see `requestHeight`).
+        calloutLayer.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(calloutLayer)
+        NSLayoutConstraint.activate([
+            calloutLayer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            calloutLayer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            calloutLayer.topAnchor.constraint(equalTo: container.topAnchor),
+            calloutLayer.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
         callout = CalloutView(appearance: keyAppearance(fittedSize: 20, unionBox: .zero))
         callout.isHidden = true
         calloutLayer.addSubview(callout)
@@ -179,26 +197,32 @@ final class KeyboardViewController: UIInputViewController {
         view.setNeedsUpdateConstraints()
     }
 
-    /// The editor can only take the caret once the view is in a window.
+    /// The editor can only take the caret once the view is in a window, and
+    /// the host only takes a keyboard's height once its view has drawn: the
+    /// height asked for before that is the default. So the constraint is
+    /// asserted again here, after the first appearance.
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        requestHeight()
         refreshStrip()
     }
 
-    /// The height the keyboard asks for: the natural layout plus whatever the
-    /// host reserves at the bottom of our view for its own dock (the globe and
-    /// microphone iOS 26 draws under third-party keyboards on the phone), which
-    /// arrives as the bottom safe-area inset. It is installed here, not in
-    /// `viewDidLoad`, because the host only reads a keyboard extension's height
-    /// constraint once the view is in its hierarchy; a host that ignores it and
-    /// hands us something taller gets the natural layout anchored to the bottom
-    /// of the safe area (see `updateMetricsIfNeeded`) rather than rows spread
-    /// across the gap.
     override func updateViewConstraints() {
         super.updateViewConstraints()
-        let m = metrics ?? naturalMetrics()
-        let natural = m?.totalHeight ?? 260
-        let wanted = natural + (m?.bottomClearance(reportedInset: view.safeAreaInsets.bottom) ?? view.safeAreaInsets.bottom)
+        requestHeight()
+    }
+
+    /// The height the keyboard asks for: the layout at its natural size plus
+    /// whatever the host reserves at the bottom of the view (nothing on a
+    /// phone — the iOS 26 dock is drawn outside it). A height constraint on
+    /// the view itself, as in Apple's template: the system reads it after
+    /// the view first draws and resizes the keyboard to match. Priority 999,
+    /// so the system's own required height never conflicts; a host that
+    /// still hands over less gets the layout fitted to it
+    /// (`updateMetricsIfNeeded`).
+    private func requestHeight() {
+        let natural = naturalMetrics()?.naturalHeight ?? 260
+        let wanted = natural + view.safeAreaInsets.bottom
         if let heightConstraint {
             if heightConstraint.constant != wanted { heightConstraint.constant = wanted }
         } else {
@@ -214,8 +238,8 @@ final class KeyboardViewController: UIInputViewController {
         updateMetricsIfNeeded()
     }
 
-    /// The dock inset is not known until the host places the view, and it
-    /// changes with rotation; the height asked for and the rows follow it.
+    /// The inset is not known until the host places the view, and it changes
+    /// with rotation; the height asked for and the rows follow it.
     override func viewSafeAreaInsetsDidChange() {
         super.viewSafeAreaInsetsDidChange()
         view.setNeedsUpdateConstraints()
@@ -254,71 +278,51 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     /// The metrics for the view's current width, or nil before it has one.
+    /// Height is the host's call in the end (see `requestHeight`), so the
+    /// metrics also know how much of it there is above the bottom inset and
+    /// shrink to fit if that is less than the natural layout.
     private func naturalMetrics() -> KeyboardMetrics? {
         let width = view.bounds.width
         guard width > 0 else { return nil }
-        return KeyboardMetrics(
+        var m = KeyboardMetrics(
             width: width,
             isLandscape: isLandscape,
             isPad: traitCollection.userInterfaceIdiom == .pad,
             safeLeft: view.safeAreaInsets.left,
             safeRight: view.safeAreaInsets.right
         )
+        let room = view.bounds.height - view.safeAreaInsets.bottom
+        if room > 0, room < m.naturalHeight { m.heightLimit = room }
+        return m
     }
 
     private func updateMetricsIfNeeded() {
         guard let new = naturalMetrics() else { return }
         let width = new.width
-        // The layout keeps its natural size whatever height the host gives.
-        // Anchored to the bottom of the safe area — above the host's dock when
-        // there is one — an over-tall view leaves a blank band of backdrop
-        // above the strip, where the eye expects nothing, instead of keys
-        // drifting up the screen or rows spread apart.
-        let bottom = layoutBottom(for: new)
+        // Anchored to the bottom of the safe area. The view is normally the
+        // height asked for; one that comes taller leaves a blank band of
+        // backdrop above the strip rather than rows spread apart, and one
+        // that comes shorter gets the fitted layout.
+        let bottom = view.bounds.height - view.safeAreaInsets.bottom
         let top = max(0, bottom - new.totalHeight)
         let stripFrame = CGRect(x: 0, y: top, width: width, height: new.stripHeight)
         let keyAreaFrame = CGRect(x: 0, y: top + new.stripHeight, width: width, height: new.keyAreaHeight)
         if strip.frame != stripFrame { strip.frame = stripFrame }
-        strip.diagnostics = layoutDiagnostics
         if keyArea.frame != keyAreaFrame { keyArea.frame = keyAreaFrame }
-        if calloutLayer.frame != view.bounds { calloutLayer.frame = view.bounds }
 
         let globe = needsInputModeSwitchKey
         if let metrics, metrics.width == new.width, metrics.isLandscape == new.isLandscape,
-           metrics.safeLeft == new.safeLeft, metrics.safeRight == new.safeRight, (globeButton != nil) == globe {
+           metrics.safeLeft == new.safeLeft, metrics.safeRight == new.safeRight,
+           metrics.heightLimit == new.heightLimit, (globeButton != nil) == globe {
             return
         }
-        let heightChanged = metrics?.totalHeight != new.totalHeight
+        let heightChanged = metrics?.naturalHeight != new.naturalHeight
         metrics = new
         if heightChanged {
             view.setNeedsUpdateConstraints()
         }
         strip.fontSize = new.stripFontSize
         rebuildKeys()
-    }
-
-    /// Where the last row ends, in the view's coordinates. Hosts hand over
-    /// frames that differ from one app to the next, so the rows are placed
-    /// from the screen's bottom edge — the one fixed thing — with the dock
-    /// clearance measured off the system keyboard. The view's own bounds are
-    /// the fallback before it is in a window.
-    private func layoutBottom(for m: KeyboardMetrics) -> CGFloat {
-        let clearance = m.bottomClearance(reportedInset: view.safeAreaInsets.bottom)
-        guard let window = view.window else { return view.bounds.height - clearance }
-        let screenBottom = view.convert(CGPoint(x: 0, y: window.bounds.height), from: window).y
-        return min(screenBottom, view.bounds.height) - clearance
-    }
-
-    /// One line of the numbers behind the layout, for reading off a device
-    /// screenshot; the simulator's host behaves differently.
-    var layoutDiagnostics: String {
-        let inWindow = view.window.map { view.convert(view.bounds, to: $0) } ?? .zero
-        let screen = view.window?.bounds.height ?? 0
-        let device = view.window?.screen.bounds.height ?? UIScreen.main.bounds.height
-        let winFrame = view.window?.frame ?? .zero
-        return String(format: "v%.0f i%.0f vw%.0f-%.0f w%.0f@%.0f-%.0f s%.0f end%.0f",
-                      view.bounds.height, view.safeAreaInsets.bottom, inWindow.minY, inWindow.maxY,
-                      screen, winFrame.minY, winFrame.maxY, device, naturalMetrics().map(layoutBottom) ?? 0)
     }
 
     private func keyAppearance(fittedSize: CGFloat, unionBox: CGRect) -> KeyAppearance {

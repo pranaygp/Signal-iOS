@@ -256,23 +256,29 @@ refreshes and stages with the app's and Safari's. As with the Safari
 extension, the resources are added to the target as individual files, not a
 blue `Resources/` folder.
 
-Height. The keyboard asks for its natural height plus the dock clearance
-through a single priority-999 constraint on its view (installed in
-`updateViewConstraints`, the pattern Apple's template uses), and lays its
-strip and rows out anchored to the bottom of that clearance, so a host that
-hands over a taller frame — the iOS 26.5 simulator gives 444pt in the app and
-a growing full-screen frame in Safari, and Apple DTS confirms the height only
-applies after the first draw — leaves a blank band above the strip instead of
-rows drifting or spreading. The clearance is the larger of the host's
-reported bottom safe-area inset and 76pt on a portrait iPhone: iOS 26 draws
-the globe/microphone dock inside the keyboard's frame with no public API to
-measure it (forum threads 681404, 813579, 799003), the reported inset comes a
-few points short of where it draws, and 76pt is where the system keyboard's
-last row ends above the screen edge. Metrics are the device's system
-keyboard on a 402pt iPhone — 6pt margins, 34pt keys with 5.25pt gaps, 40pt
-keys on a 50pt pitch, 8pt corners, 6 + 4·40 + 3·10 = 196pt of rows under a
-44pt strip, 240 all told — not the simulator's, which draws a different,
-taller keyboard.
+Height. The keyboard asks for its natural height (strip plus four rows, plus
+any bottom safe-area inset the host reports) through a single priority-999
+height constraint on its own view, created in `viewDidLoad` and re-asserted
+in `viewDidAppear`, which is Apple's template pattern. The one thing the
+template leaves unsaid, found by bisecting against it in the simulator: the
+system only reads that constraint when the view lays out with Auto Layout.
+A view of frame-placed subviews with nothing but the height constraint is
+never measured, and every host keeps its default height — 224pt in most
+apps and 245pt in Messages on an iPhone 17 Pro Max, 452pt in the
+simulator — which clipped the bottom row and looked like the iOS 26 dock
+overlapping the keys. The callout layer is therefore pinned to the view's
+edges with constraints (`KeyboardViewController.viewDidLoad`); with that in
+place the window follows the constraint after the first draw in every host,
+including the simulator. The strip and rows are laid out by frame from the
+bottom of the safe area, so a host that still hands over more leaves a blank
+band above the strip rather than rows drifting, and one that hands over less
+gets the rows and gaps shrunk together to fit (`KeyboardMetrics.heightLimit`).
+The iOS 26 globe/microphone dock is the host's and is drawn below the view
+we are given (the reported bottom inset is 0 on the phone), so nothing in the
+layout accounts for it. Apple DTS confirms the height applies only after the
+first draw, so a brief resize on the first appearance is expected (forum
+threads 813579, 799003). Test on the iPhone 17 Pro Max simulator — the
+user's phone — which `Scripts/qiuling-sim.sh` now defaults to.
 
 Metrics (`KeyboardLayout.swift`) follow the iOS 26 system keyboard as measured
 pixel by pixel in the iOS 26.5 simulator on a 402pt iPhone, where the two
