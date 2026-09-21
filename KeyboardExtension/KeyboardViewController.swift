@@ -274,10 +274,12 @@ final class KeyboardViewController: UIInputViewController {
         // there is one — an over-tall view leaves a blank band of backdrop
         // above the strip, where the eye expects nothing, instead of keys
         // drifting up the screen or rows spread apart.
-        let top = max(0, view.bounds.height - new.bottomClearance(reportedInset: view.safeAreaInsets.bottom) - new.totalHeight)
+        let bottom = layoutBottom(for: new)
+        let top = max(0, bottom - new.totalHeight)
         let stripFrame = CGRect(x: 0, y: top, width: width, height: new.stripHeight)
         let keyAreaFrame = CGRect(x: 0, y: top + new.stripHeight, width: width, height: new.keyAreaHeight)
         if strip.frame != stripFrame { strip.frame = stripFrame }
+        strip.diagnostics = layoutDiagnostics
         if keyArea.frame != keyAreaFrame { keyArea.frame = keyAreaFrame }
         if calloutLayer.frame != view.bounds { calloutLayer.frame = view.bounds }
 
@@ -293,6 +295,30 @@ final class KeyboardViewController: UIInputViewController {
         }
         strip.fontSize = new.stripFontSize
         rebuildKeys()
+    }
+
+    /// Where the last row ends, in the view's coordinates. Hosts hand over
+    /// frames that differ from one app to the next, so the rows are placed
+    /// from the screen's bottom edge — the one fixed thing — with the dock
+    /// clearance measured off the system keyboard. The view's own bounds are
+    /// the fallback before it is in a window.
+    private func layoutBottom(for m: KeyboardMetrics) -> CGFloat {
+        let clearance = m.bottomClearance(reportedInset: view.safeAreaInsets.bottom)
+        guard let window = view.window else { return view.bounds.height - clearance }
+        let screenBottom = view.convert(CGPoint(x: 0, y: window.bounds.height), from: window).y
+        return min(screenBottom, view.bounds.height) - clearance
+    }
+
+    /// One line of the numbers behind the layout, for reading off a device
+    /// screenshot; the simulator's host behaves differently.
+    var layoutDiagnostics: String {
+        let inWindow = view.window.map { view.convert(view.bounds, to: $0) } ?? .zero
+        let screen = view.window?.bounds.height ?? 0
+        let device = view.window?.screen.bounds.height ?? UIScreen.main.bounds.height
+        let winFrame = view.window?.frame ?? .zero
+        return String(format: "v%.0f i%.0f vw%.0f-%.0f w%.0f@%.0f-%.0f s%.0f end%.0f",
+                      view.bounds.height, view.safeAreaInsets.bottom, inWindow.minY, inWindow.maxY,
+                      screen, winFrame.minY, winFrame.maxY, device, naturalMetrics().map(layoutBottom) ?? 0)
     }
 
     private func keyAppearance(fittedSize: CGFloat, unionBox: CGRect) -> KeyAppearance {
