@@ -114,8 +114,9 @@ struct KeyboardMetrics {
         return isLandscape ? 7 : 10
     }
     private var naturalTopInset: CGFloat { 6 }
-    /// Below the last row: the rows end where the view does, so nothing more.
-    private var naturalBottomInset: CGFloat { isPad ? 6 : (isLandscape ? 8 : 0) }
+    /// Below the last row. The host clips at the view's edge, so the keys'
+    /// shadow band and bottom corners need a few points of their own.
+    private var naturalBottomInset: CGFloat { isPad ? 6 : (isLandscape ? 8 : 4) }
     private var naturalKeyAreaHeight: CGFloat { naturalTopInset + 4 * naturalKeyHeight + 3 * naturalVerticalGap + naturalBottomInset }
     /// One, unless the host gave less than the natural layout needs.
     private var verticalScale: CGFloat {
