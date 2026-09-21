@@ -74,14 +74,25 @@ class QiulingSettingsViewController: OWSTableViewController2 {
         alphabet.headerTitle = "Alphabet"
         alphabet.add(.label(withText: "Alphabet", accessoryText: status.displayName, accessoryType: .none))
         alphabet.add(.label(withText: "Marks", accessoryText: Self.countFormatter.string(from: NSNumber(value: status.marksCount)) ?? "\(status.marksCount)", accessoryType: .none))
+        if let version = status.version {
+            alphabet.add(.label(
+                withText: "Version",
+                accessoryText: version + (status.isUsingDownloadedCopy ? " (downloaded)" : " (included with the app)"),
+                accessoryType: .none,
+            ))
+        } else {
+            alphabet.add(.label(
+                withText: "Copy in use",
+                accessoryText: status.isUsingDownloadedCopy ? "Downloaded update" : "Included with the app",
+                accessoryType: .none,
+            ))
+        }
         if let buildDate = status.buildDate {
             alphabet.add(.label(withText: "Built", accessoryText: Self.dateFormatter.string(from: buildDate), accessoryType: .none))
         }
-        alphabet.add(.label(
-            withText: "Copy in use",
-            accessoryText: status.isUsingDownloadedCopy ? "Downloaded update" : "Included with the app",
-            accessoryType: .none,
-        ))
+        if let latest = status.latestVersion {
+            alphabet.add(.label(withText: "Latest available", accessoryText: latest, accessoryType: .none))
+        }
         alphabet.footerTitle = "Qiuling is the script used in Practice, Recall and Write. Marks are the letters and letter groups it draws as one shape. The alphabet is still being drawn, so the app keeps it current."
         contents.add(alphabet)
 
@@ -197,7 +208,8 @@ class QiulingSettingsViewController: OWSTableViewController2 {
         } else if let lastCheck = status.lastCheck {
             switch lastCheck.outcome {
             case .upToDate:
-                sentence = "Last checked \(relativeDescription(of: lastCheck.date)). You have the latest alphabet."
+                let which = status.version.map { " (\($0))" } ?? ""
+                sentence = "Last checked \(relativeDescription(of: lastCheck.date)). You have the latest alphabet\(which)."
             case .updated:
                 sentence = "Updated to the latest alphabet just now."
             case .failed:

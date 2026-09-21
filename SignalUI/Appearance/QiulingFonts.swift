@@ -33,6 +33,7 @@ public final class QiulingFonts {
     private let defaults = UserDefaults.standard
     private let currentShaKey = "QiulingFonts.currentSha"
     private let currentBuiltAtKey = "QiulingFonts.currentBuiltAt"
+    private let latestBuiltAtKey = "QiulingFonts.latestBuiltAt"
     private let installedShaKey = "QiulingFonts.installedSha"
     private let lastCheckKey = "QiulingFonts.lastCheck"
     private let lastCheckOutcomeKey = "QiulingFonts.lastCheckOutcome"
@@ -156,6 +157,12 @@ public final class QiulingFonts {
         public let phoneWide: PhoneWideStatus
         /// How many letters and letter groups the font draws as one shape.
         public let marksCount: Int
+        /// The font in use, as `YYYYMMDDHHmm` (UTC) of when it was built — the
+        /// same scheme as the app's own build number, so "is this the latest"
+        /// is one glance at two numbers. Nil when the copy's date is unknown.
+        public let version: String?
+        /// The version the server offered at the last successful check, if any.
+        public let latestVersion: String?
     }
 
     /// Posted whenever anything in `status` may have changed.
@@ -174,7 +181,18 @@ public final class QiulingFonts {
             updatesAvailable: manifestURL != nil && bypassToken != nil,
             phoneWide: phoneWideStatus(currentSha: current?.sha),
             marksCount: blocks.count,
+            version: (downloaded ? downloadedBuildDate : Self.bundledBuildDate).map(Self.version(of:)),
+            latestVersion: defaults.string(forKey: latestBuiltAtKey).flatMap(Self.date(fromISO8601:)).map(Self.version(of:)),
         )
+    }
+
+    /// `202609212126` for a font built 2026-09-21 21:26 UTC.
+    public static func version(of built: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = "yyyyMMddHHmm"
+        return f.string(from: built)
     }
 
     private var lastCheck: LastCheck? {
@@ -322,10 +340,16 @@ public final class QiulingFonts {
         guard let entry = manifest[Self.buildId] else { throw OWSGenericError("manifest has no \(Self.buildId)") }
         guard entry.family == Self.family else { throw OWSGenericError("manifest family \(entry.family) is not \(Self.family)") }
 
-        let have = defaults.string(forKey: currentShaKey) ?? Self.bundledSha
+        if let builtAt = entry.builtAt {
+            defaults.set(builtAt, forKey: latestBuiltAtKey)
+        }
+        // The copy actually in use — not a recorded sha whose file is gone,
+        // which once left the app saying "you have the latest" while drawing
+        // with the bundled font.
+        let have = currentFont?.sha ?? Self.bundledSha
         guard entry.sha256 != have else {
             // The manifest may have learnt the build date since the copy landed.
-            if let builtAt = entry.builtAt, defaults.string(forKey: currentShaKey) != nil {
+            if let builtAt = entry.builtAt, currentDownloadedURL != nil {
                 defaults.set(builtAt, forKey: currentBuiltAtKey)
             }
             return false

@@ -12,7 +12,7 @@
  * App Group container — or the copy bundled with this extension — and hands
  * it over as base64. It is cached in storage.local keyed by its sha and
  * refreshed on browser start, on install, and on a tap when the cache is more
- * than an hour old, so an over-the-air font update reaches Safari without a
+ * than ten minutes old, so an over-the-air font update reaches Safari without a
  * reinstall. If native messaging fails outright the bundled TTF is used via
  * its extension URL. */
 
@@ -109,7 +109,7 @@ function qiulingIsOn(id) {
 
 const STYLE_ID = 'qiuling-reader-style';
 const BUNDLED_TTF = 'QiulingMorphWrite-Regular.ttf';
-const FONT_MAX_AGE_MS = 60 * 60 * 1000;
+const FONT_MAX_AGE_MS = 10 * 60 * 1000;   // matches the native handler's interval
 
 /* --- the font, from the app --------------------------------------------- */
 

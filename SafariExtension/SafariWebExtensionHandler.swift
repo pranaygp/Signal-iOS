@@ -22,7 +22,9 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
     private static let buildId = "morph"
     private static let family = "QiulingMorphWrite-Regular"
-    private static let checkInterval: TimeInterval = 60 * 60
+    // Ten minutes, not an hour: a fix pushed while you are reading should be
+    // a Safari restart away, and the check is one small GET.
+    private static let checkInterval: TimeInterval = 10 * 60
 
     func beginRequest(with context: NSExtensionContext) {
         let item = context.inputItems.first as? NSExtensionItem
