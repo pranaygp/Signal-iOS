@@ -666,8 +666,14 @@ final class PrivateEditorView: UITextView, UITextViewDelegate, NSLayoutManagerDe
     }
 
     /// Where the first line's letters stand, in the editor's coordinates.
+    /// `UITextView.font` can drop to nil after the text is reset; the layout
+    /// path must never trust it.
+    private var currentFont: UIFont {
+        font ?? QiulingFont.shared.uiFont(size: lineHeight) ?? .systemFont(ofSize: lineHeight)
+    }
+
     var firstBaseline: CGFloat {
-        textContainerInset.top + font!.ascender
+        textContainerInset.top + currentFont.ascender
     }
 
     func layoutManager(
@@ -682,7 +688,7 @@ final class PrivateEditorView: UITextView, UITextViewDelegate, NSLayoutManagerDe
         // taller, or two lines would no longer fit the strip.
         lineFragmentRect.pointee.size.height = lineHeight
         lineFragmentUsedRect.pointee.size.height = lineHeight
-        baselineOffset.pointee = font?.ascender ?? lineHeight * 0.8
+        baselineOffset.pointee = currentFont.ascender
         return true
     }
 
@@ -725,7 +731,7 @@ final class PrivateEditorView: UITextView, UITextViewDelegate, NSLayoutManagerDe
     }
 
     private func changed() {
-        typingAttributes = [.font: font as Any, .foregroundColor: palette.label]
+        typingAttributes = [.font: currentFont, .foregroundColor: palette.label]
         fitLines()
         scrollRangeToVisible(selectedRange)
         scheduleSpellCheck()
