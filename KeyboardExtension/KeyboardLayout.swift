@@ -105,8 +105,11 @@ struct KeyboardMetrics {
         return isLandscape ? 7 : 11
     }
     var topInset: CGFloat { isLandscape && !isPad ? 6 : 8 }
-    /// Below the last row, before the dock or the view's bottom.
-    var bottomInset: CGFloat { 3 }
+    /// Below the last row, before the dock or the view's bottom. The system
+    /// keyboard leaves 14pt here on an iPhone; on a device the host also
+    /// reports the dock's inset a few points short of where it draws, so a
+    /// smaller gap puts the bottom row's corners under it.
+    var bottomInset: CGFloat { isPad ? 6 : (isLandscape ? 8 : 14) }
     var rowPitch: CGFloat { keyHeight + verticalGap }
     var stripHeight: CGFloat { isLandscape && !isPad ? 38 : 44 }
     /// Four rows at their pitch inside the insets; the dock, when the host

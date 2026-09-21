@@ -258,7 +258,7 @@ blue `Resources/` folder.
 
 Height: the layout has a natural height — the strip (44pt portrait, 38
 landscape) plus the key area (top inset + four rows at their pitch + bottom
-inset; 8 + 4·43 + 3·11 + 3 = 216pt portrait on the phone, 260 all told) — and the
+inset; 8 + 4·43 + 3·11 + 14 = 227pt portrait on the phone, 271 all told; the 14pt is the system keyboard's clearance above the dock, which the host reports a few points short of where it draws) — and the
 keyboard asks for that plus `view.safeAreaInsets.bottom`, through one
 priority-999 constraint on its view installed in `updateViewConstraints` once
 the view is in the host's hierarchy (the template pattern; Apple DTS says the
