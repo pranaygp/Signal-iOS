@@ -201,19 +201,37 @@ The app also ships a system keyboard (`KeyboardExtension/`, bundle id
 `…q.keyboard`, display name "Qiuling"). Its keys carry the marks of the
 current alphabet instead of letters — the letter is only shown, small, in the
 pop-up while a key is held — so typing is practice, and what is on the screen
-is hard to read over a shoulder. The strip above the keys shows what has been
-typed into the field, set in Qiuling. Otherwise it behaves like the system
-keyboard: slide-to-correct, two-thumb typing, a held Delete that speeds up and
-then eats words, `123` and `#+=` layers, the globe. Holding a letter opens a
-row of the letter groups the font draws as one mark (from
-`mappings-morph.json`, bundled beside the font); lifting on one types its
-letters.
+is hard to read over a shoulder. The strip above the keys is the system
+keyboard's suggestions bar set in Qiuling (`PreviewStripView.swift`,
+`Suggester`): the word under the caret, then `UITextChecker`'s completions
+and — for a word it does not know — its guesses, with the person's own names
+from the host's `UILexicon` first. A guess within two edits of the word is a
+correction: the bar shows the word as typed in quotes, the correction heavier,
+and Space, punctuation or Return replaces the word (unless the host asked for
+no correction); the quoted word stays in the bar for one more key, and tapping
+it — or Delete — puts the word back and stops correcting it for the session.
+Tapping any other cell replaces the word and adds a space. Otherwise the
+keyboard behaves like the system's: slide-to-correct, two-thumb typing, a held
+Delete that speeds up and then eats words, `123` and `#+=` layers, the globe.
+Holding a letter opens a row of the letter groups the font draws as one mark
+(from `mappings-morph.json`, bundled beside the font); lifting on one types
+its letters.
 
 In normal use the keyboard types ordinary Latin, so the receiving app sees
 English. The lock key on the bottom-left row turns on **private compose**: the
-strip becomes the composer, keys go into a buffer inside the keyboard, and
-nothing reaches the field until **Insert** (or Return). Insert encodes the
-buffer into the font's private-use code points, so the text reads as Qiuling
+strip becomes the composer — the lock, an editor, **Insert** and **Picture** —
+keys go into the editor inside the keyboard, and nothing reaches the field
+until Insert (or Return). The editor is a real `UITextView`
+(`PrivateEditorView`) at half the strip's height, so one line sits centred and
+two fill the strip before it scrolls; a tap or the held space bar moves its
+caret, keys type and delete at the caret through `PrivateComposer`, and words
+the checker does not know get the compose box's red dotted underline, drawn by
+a layout manager since the face has no underline metrics. The editor takes
+first responder while private compose is on so the caret and selection are
+the system's; on iOS 26 the `textDocumentProxy` stayed on the host regardless,
+but every host edit still resigns it first in case a version redirects the
+proxy to a text view inside the keyboard. Insert encodes the
+editor's text into the font's private-use code points, so the text reads as Qiuling
 in any app that has the font — this app's bubbles included — and as boxes in
 one that does not. The rule (`QiulingEncoder.swift`): shape the text with
 CoreText exactly as the screen would, and map each glyph back to the
@@ -221,12 +239,13 @@ private-use point the font reaches it from (built once per process by asking
 the font for the glyph of every point in U+F0000…, letters filling only what
 the points left). Spaces always stay U+0020 whichever contextual space glyph
 was chosen; digits, punctuation the alphabet lacks and line breaks pass
-through unchanged. **Picture** copies the buffer as a PNG (the Write screen's
-parameters, local-only pasteboard, expires in five minutes); this needs Allow
-Full Access, and the strip says so when it is off. The buffer lives only in
-memory for the extension's life; the one persisted setting is the on/off
-flag. Secure fields force it off. Press and hold the composer to see the
-buffer in letters.
+through unchanged. **Picture** copies the message as a PNG — the script at
+64pt, white on black whatever the appearance, 28pt padding, no wider than its
+text and wrapped past 1000pt — to the local-only pasteboard for five minutes;
+this needs Allow Full Access, and the strip says so when it is off. A keyboard
+can only type, so after copying the strip says to hold the field and choose
+Paste. The message lives only in memory for the extension's life; the one
+persisted setting is the on/off flag. Secure fields force it off.
 
 Enable it under Settings › General › Keyboard › Keyboards › Add New Keyboard
 › Qiuling, then hold the globe on any keyboard. In the simulator,
@@ -237,17 +256,49 @@ refreshes and stages with the app's and Safari's. As with the Safari
 extension, the resources are added to the target as individual files, not a
 blue `Resources/` folder.
 
-Height: the keyboard asks for 260pt portrait (44 strip + 216 keys) and 200
-landscape through one priority-999 constraint on its view, installed in
-`updateViewConstraints` once the view is in the host's hierarchy — the
-template pattern; Apple DTS says the host settles on it a few hundred
-milliseconds after appearance. The iOS 26.5 simulator host ignores it (444pt
-in the app's Practice field; 874pt and growing per launch in Safari), and the
-Apple developer forums report the same for `allowsSelfSizing` and an
-`intrinsicContentSize` override, so neither is used. Whatever height the host
-gives, the rows keep their natural pitch anchored to the bottom of the view; an
-over-tall host shows a blank band of backdrop above the strip. Whether a
-device honours the constraint is unverified.
+Height: the layout has a natural height — the strip (44pt portrait, 38
+landscape) plus the key area (top inset + four rows at their pitch + bottom
+inset; 8 + 4·43 + 3·11 + 3 = 216pt portrait on the phone, 260 all told) — and the
+keyboard asks for that plus `view.safeAreaInsets.bottom`, through one
+priority-999 constraint on its view installed in `updateViewConstraints` once
+the view is in the host's hierarchy (the template pattern; Apple DTS says the
+host settles on it a few hundred milliseconds after appearance) and refreshed
+from `viewSafeAreaInsetsDidChange`. The inset matters on a device: iOS 26
+draws its own dock — globe and microphone — *inside* the frame it hands a
+third-party keyboard, and reports that band as the view's bottom safe-area
+inset; the first TestFlight build asked for the natural height alone, so the
+dock covered the bottom row. The strip and rows now sit above the inset,
+whatever the host reports it as (no public constant; it is read, never
+assumed). The iOS 26.5 simulator host reports no such inset and ignores the
+constraint anyway (444pt in the app's Practice field; 874pt and growing per
+launch in Safari), and the Apple developer forums report the same for
+`allowsSelfSizing` and an `intrinsicContentSize` override, so neither is
+used. Whatever height the host gives, the rows keep their natural pitch
+anchored to the bottom of the safe area; an over-tall host shows a blank band
+of backdrop above the strip.
+
+Metrics (`KeyboardLayout.swift`) follow the iOS 26 system keyboard as measured
+pixel by pixel in the iOS 26.5 simulator on a 402pt iPhone, where the two
+keyboards now land on the same pixels: 6.5pt outer margins (plus the landscape
+safe insets), ten letter keys and nine gaps filling the row with the system's
+6:33.5 gap-to-key ratio (so k = row / (10 + 9·6/33.5); 33.5pt keys and 6pt
+gaps at 402pt, both scaling down together on a narrower phone), 43pt keys on a
+54pt pitch, corners of 8pt scaled with the key height, row 3's side keys 1.35
+keys wide with the letters block centred, and the bottom row's `123` and
+Return ending flush with row 3's first and last letter (2.5 keys + 1.5 gaps).
+iPad keeps the ratios on 56/76pt keys. Marks are sized to the system font's
+cap height at the system's 24pt label size (every mark's ink is 0.6em tall, so
+≈ 28pt), capped by the key's room; special-key labels are 18pt, as the
+system's `123` measures. Colours (`KeyboardPalette.swift`) are the ones read
+off the user's iPhone 17 Pro dark-mode screenshot — letter keys #6B6B6E,
+special keys #46464A — and the classic light set, white letter keys over a 1pt
+#898A8D band and #ADB3BC special keys; the simulator's own system keyboard
+draws every key one flat colour (#413F3F dark, white light), so colours are
+judged on a device, geometry in the simulator. Holding Space for 0.4s without
+moving fades the labels to 30% and seeks the caret one character per half a
+key of sideways travel (`adjustTextPosition`; in private compose the
+controller's `onSeek(offset:)` hook moves the buffer's caret instead); lifting
+types nothing.
 
 Signing follows the Safari extension: the App ID and a "Qiuling Keyboard
 Development" profile (every development certificate, all devices) were made

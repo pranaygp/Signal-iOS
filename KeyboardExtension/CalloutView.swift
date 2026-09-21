@@ -16,12 +16,15 @@ struct CalloutItem: Equatable {
 
 /// The pop-up over a pressed character key: the key's own rounded rect joined
 /// by concave necks to a larger rect above showing the mark magnified with its
-/// letter beneath. After a long press it widens into a row of alternates. It
-/// lives in an overlay above the strip so nothing clips it.
+/// letter beneath, 11pt wider than the key each side as the system's is. After
+/// a long press it widens into a row of alternates. It lives in an overlay
+/// above the strip so nothing clips it, and never rises past the input view's
+/// top, where the host would clip it.
 final class CalloutView: UIView {
     static let upperHeight: CGFloat = 54
     static let upperRise: CGFloat = 8
     static let neck: CGFloat = 6
+    static let flare: CGFloat = 11
 
     private var appearance: KeyAppearance
     private var keyRect: CGRect = .zero
@@ -60,7 +63,7 @@ final class CalloutView: UIView {
         items = []
         highlightedIndex = nil
         self.keyRect = keyRect
-        var width = keyWidth + 24
+        var width = keyWidth + 2 * Self.flare
         var x = keyRect.midX - width / 2
         if key.isFirstInRow && key.row < 3 { x = keyRect.minX }
         if key.isLastInRow && key.row < 3 { x = keyRect.maxX - width }
@@ -140,20 +143,22 @@ final class CalloutView: UIView {
 
     /// Clockwise from the upper-left: the upper rect, a neck down to the key's
     /// right edge, around the key, and a neck back up. A side whose upper edge
-    /// is flush with the key's gets a straight line instead of a neck.
+    /// is flush with the key's gets a straight line instead of a neck. The
+    /// upper rect is rounder than the key, as the system's magnified pop-up is.
     private func shapePath(key: CGRect, upper: CGRect) -> UIBezierPath {
         let r = appearance.cornerRadius
+        let ru = min(r + 5, upper.height / 2)
         let neck = Self.neck
         let path = UIBezierPath()
-        path.move(to: CGPoint(x: upper.minX, y: upper.minY + r))
-        path.addArc(withCenter: CGPoint(x: upper.minX + r, y: upper.minY + r), radius: r, startAngle: .pi, endAngle: 1.5 * .pi, clockwise: true)
-        path.addLine(to: CGPoint(x: upper.maxX - r, y: upper.minY))
-        path.addArc(withCenter: CGPoint(x: upper.maxX - r, y: upper.minY + r), radius: r, startAngle: 1.5 * .pi, endAngle: 0, clockwise: true)
+        path.move(to: CGPoint(x: upper.minX, y: upper.minY + ru))
+        path.addArc(withCenter: CGPoint(x: upper.minX + ru, y: upper.minY + ru), radius: ru, startAngle: .pi, endAngle: 1.5 * .pi, clockwise: true)
+        path.addLine(to: CGPoint(x: upper.maxX - ru, y: upper.minY))
+        path.addArc(withCenter: CGPoint(x: upper.maxX - ru, y: upper.minY + ru), radius: ru, startAngle: 1.5 * .pi, endAngle: 0, clockwise: true)
         if abs(upper.maxX - key.maxX) < 0.5 {
             path.addLine(to: CGPoint(x: key.maxX, y: key.maxY - r))
         } else {
-            path.addLine(to: CGPoint(x: upper.maxX, y: upper.maxY - r))
-            path.addArc(withCenter: CGPoint(x: upper.maxX - r, y: upper.maxY - r), radius: r, startAngle: 0, endAngle: 0.5 * .pi, clockwise: true)
+            path.addLine(to: CGPoint(x: upper.maxX, y: upper.maxY - ru))
+            path.addArc(withCenter: CGPoint(x: upper.maxX - ru, y: upper.maxY - ru), radius: ru, startAngle: 0, endAngle: 0.5 * .pi, clockwise: true)
             path.addCurve(
                 to: CGPoint(x: key.maxX, y: key.minY),
                 controlPoint1: CGPoint(x: key.maxX + neck, y: upper.maxY),
@@ -165,16 +170,16 @@ final class CalloutView: UIView {
         path.addLine(to: CGPoint(x: key.minX + r, y: key.maxY))
         path.addArc(withCenter: CGPoint(x: key.minX + r, y: key.maxY - r), radius: r, startAngle: 0.5 * .pi, endAngle: .pi, clockwise: true)
         if abs(upper.minX - key.minX) < 0.5 {
-            path.addLine(to: CGPoint(x: upper.minX, y: upper.minY + r))
+            path.addLine(to: CGPoint(x: upper.minX, y: upper.minY + ru))
         } else {
             path.addLine(to: CGPoint(x: key.minX, y: key.minY))
             path.addCurve(
-                to: CGPoint(x: upper.minX + r, y: upper.maxY),
+                to: CGPoint(x: upper.minX + ru, y: upper.maxY),
                 controlPoint1: CGPoint(x: key.minX, y: key.minY - neck),
                 controlPoint2: CGPoint(x: key.minX - neck, y: upper.maxY)
             )
-            path.addArc(withCenter: CGPoint(x: upper.minX + r, y: upper.maxY - r), radius: r, startAngle: 0.5 * .pi, endAngle: .pi, clockwise: true)
-            path.addLine(to: CGPoint(x: upper.minX, y: upper.minY + r))
+            path.addArc(withCenter: CGPoint(x: upper.minX + ru, y: upper.maxY - ru), radius: ru, startAngle: 0.5 * .pi, endAngle: .pi, clockwise: true)
+            path.addLine(to: CGPoint(x: upper.minX, y: upper.minY + ru))
         }
         path.close()
         return path
@@ -239,7 +244,7 @@ final class CalloutView: UIView {
                 letters.draw(at: CGPoint(x: cell.midX - lettersSize.width / 2, y: blockTop + union.height + 2))
             } else {
                 let attributed = NSAttributedString(string: item.text, attributes: [
-                    .font: UIFont.systemFont(ofSize: 22.5), .foregroundColor: palette.label,
+                    .font: UIFont.systemFont(ofSize: appearance.characterLabelSize), .foregroundColor: palette.label,
                 ])
                 let size = attributed.size()
                 attributed.draw(at: CGPoint(x: cell.midX - size.width / 2, y: cell.midY - size.height / 2))

@@ -25,7 +25,13 @@ struct KeyAppearance: Equatable {
     var returnEmphasised = false
     var returnDimmed = false
     var privateState: PrivateKeyState = .off
-    var cornerRadius: CGFloat = 5
+    var cornerRadius: CGFloat = 8
+    /// Digits and punctuation, drawn in the system font like the system's letters.
+    var characterLabelSize: CGFloat = 24
+    /// Return, 123, space and the like.
+    var specialLabelSize: CGFloat = 18
+    /// Labels fade while the space bar is held to seek the caret.
+    var labelAlpha: CGFloat = 1
 }
 
 /// One key: face, shadow band, label. Touches are tracked by the key area,
@@ -112,17 +118,19 @@ final class KeyView: UIView {
         faceColor.setFill()
         facePath.fill()
 
+        context.setAlpha(appearance.labelAlpha)
         var labelColor = palette.label
         var labelAlpha: CGFloat = 1
+        let size = appearance.specialLabelSize
         switch spec.kind {
         case .character(let text):
             drawCharacterLabel(text, in: face, context: context, color: labelColor)
         case .space:
-            drawText(Strings.spaceKey, size: 16, color: palette.secondaryLabel, in: face)
+            drawText(Strings.spaceKey, size: size, color: palette.secondaryLabel, in: face)
         case .layer(let target):
-            drawText(target == .numbers ? Strings.numbersKey : Strings.lettersKey, size: 16, color: labelColor, in: face)
+            drawText(target == .numbers ? Strings.numbersKey : Strings.lettersKey, size: size, color: labelColor, in: face)
         case .page(let target):
-            drawText(target == .symbols ? Strings.symbolsKey : Strings.numbersKey, size: 16, color: labelColor, in: face)
+            drawText(target == .symbols ? Strings.symbolsKey : Strings.numbersKey, size: size, color: labelColor, in: face)
         case .delete:
             drawSymbol(isPressed ? "delete.left.fill" : "delete.left", color: labelColor, in: face)
         case .globe:
@@ -130,7 +138,7 @@ final class KeyView: UIView {
         case .returnKey:
             if appearance.returnEmphasised { labelColor = palette.emphasisedReturnLabel }
             if appearance.returnDimmed { labelAlpha = 0.4 }
-            drawText(Strings.returnLabel(for: appearance.returnKeyType), size: 16, color: labelColor.withAlphaComponent(labelAlpha), in: face)
+            drawText(Strings.returnLabel(for: appearance.returnKeyType), size: size, color: labelColor.withAlphaComponent(labelAlpha), in: face)
         case .privateCompose:
             switch appearance.privateState {
             case .on:
@@ -166,7 +174,7 @@ final class KeyView: UIView {
            let (glyph, font) = QiulingFont.shared.glyph(for: text, size: appearance.fittedSize) {
             KeyView.drawMark(glyph: glyph, font: font, unionBox: appearance.unionBox, centre: CGPoint(x: face.midX, y: face.midY), color: color, in: context, viewHeight: bounds.height)
         } else {
-            drawText(text, size: 22.5, color: color, in: face)
+            drawText(text, size: appearance.characterLabelSize, color: color, in: face)
         }
     }
 
@@ -201,7 +209,8 @@ final class KeyView: UIView {
         let configuration = UIImage.SymbolConfiguration(pointSize: 18, weight: .regular, scale: .medium)
         guard let image = UIImage(systemName: name, withConfiguration: configuration)?.withTintColor(color, renderingMode: .alwaysOriginal) else { return }
         let size = image.size
-        image.draw(in: CGRect(x: face.midX - size.width / 2, y: face.midY - size.height / 2, width: size.width, height: size.height))
+        // UIImage drawing sets its own alpha, so the context's fade is passed along.
+        image.draw(in: CGRect(x: face.midX - size.width / 2, y: face.midY - size.height / 2, width: size.width, height: size.height), blendMode: .normal, alpha: appearance.labelAlpha)
     }
 
     // MARK: Accessibility

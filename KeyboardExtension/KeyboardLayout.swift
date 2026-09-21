@@ -68,8 +68,11 @@ struct KeySpec {
 }
 
 /// The numbers that place every key, derived from the width the host gives
-/// us. Portrait and landscape have their own vertical rhythm; iPad stretches
-/// the same rows.
+/// us. They follow the iOS 26 system keyboard as measured pixel by pixel on a
+/// 402pt iPhone: 6.5pt outer margins, ten 33.5pt keys with 6pt gaps filling
+/// the width, 43pt keys on a 54pt pitch, 8pt corners. Narrower phones scale
+/// the key and gap together so a row still fills the width exactly; iPad
+/// keeps the same proportions on taller keys.
 struct KeyboardMetrics {
     let width: CGFloat
     let isLandscape: Bool
@@ -77,46 +80,58 @@ struct KeyboardMetrics {
     let safeLeft: CGFloat
     let safeRight: CGFloat
 
-    var gap: CGFloat { isPad ? 12 : 6 }
-    var edgeLeft: CGFloat { (isPad ? 6 : 3) + (isLandscape && !isPad ? safeLeft : 0) }
-    var edgeRight: CGFloat { (isPad ? 6 : 3) + (isLandscape && !isPad ? safeRight : 0) }
-    var keyWidth: CGFloat { (width - edgeLeft - edgeRight - 9 * gap) / 10 }
-    var sideWidth: CGFloat { 1.25 * keyWidth + gap / 2 }
+    /// The system's ratio of gap to key: 6 to 33.5 on a 389pt row.
+    private static let gapPerKey: CGFloat = 6 / 33.5
+    private static let referenceKeyHeight: CGFloat = 43
+
+    var edgeLeft: CGFloat { 6.5 + (isLandscape && !isPad ? safeLeft : 0) }
+    var edgeRight: CGFloat { 6.5 + (isLandscape && !isPad ? safeRight : 0) }
+    private var rowWidth: CGFloat { width - edgeLeft - edgeRight }
+    /// Ten keys and nine gaps span the row: k = row / (10 + 9·ratio).
+    var keyWidth: CGFloat { rowWidth / (10 + 9 * Self.gapPerKey) }
+    var gap: CGFloat { keyWidth * Self.gapPerKey }
+    /// Row 3's side keys (private compose, delete; the layer pages).
+    var sideWidth: CGFloat { 1.35 * keyWidth }
+    /// Row 4's 123 and return keys: each ends flush with the near edge of
+    /// row 3's first or last letter, as the system's do, which with the
+    /// letters block centred is 2.5 keys and 1.5 gaps.
+    var cornerKeyWidth: CGFloat { 2.5 * keyWidth + 1.5 * gap }
     var keyHeight: CGFloat {
         if isPad { return isLandscape ? 76 : 56 }
-        return isLandscape ? 30 : 42
+        return isLandscape ? 32 : Self.referenceKeyHeight
     }
     var verticalGap: CGFloat {
-        if isPad { return 10 }
-        return isLandscape ? 7 : 12
+        if isPad { return 12 }
+        return isLandscape ? 7 : 11
     }
     var topInset: CGFloat { isLandscape && !isPad ? 6 : 8 }
-    var bottomInset: CGFloat { isLandscape && !isPad ? 15 : 4 }
+    /// Below the last row, before the dock or the view's bottom.
+    var bottomInset: CGFloat { 3 }
     var rowPitch: CGFloat { keyHeight + verticalGap }
     var stripHeight: CGFloat { isLandscape && !isPad ? 38 : 44 }
-    var keyAreaHeight: CGFloat {
-        if isPad { return isLandscape ? 352 : 264 }
-        return isLandscape ? 162 : 216
-    }
+    /// Four rows at their pitch inside the insets; the dock, when the host
+    /// draws one, sits below this in the safe-area inset.
+    var keyAreaHeight: CGFloat { topInset + 4 * keyHeight + 3 * verticalGap + bottomInset }
     var totalHeight: CGFloat { stripHeight + keyAreaHeight }
-    var cornerRadius: CGFloat { 5 }
+    /// 8pt on a 43pt key, scaled with the key so iPad's taller keys stay as round.
+    var cornerRadius: CGFloat { 8 * keyHeight / Self.referenceKeyHeight }
 
-    /// The box the a–z marks are fitted into on a key.
-    var markBox: CGSize {
-        if isPad { return CGSize(width: 30, height: 34) }
-        return isLandscape ? CGSize(width: 18, height: 20) : CGSize(width: 22, height: 26)
+    /// The point size of the system keyboard's letter labels; marks are sized
+    /// to read at the same optical height (see `KeyboardViewController`).
+    var systemLabelSize: CGFloat {
+        if isPad { return isLandscape ? 30 : 28 }
+        return isLandscape ? 22 : 24
     }
+    /// The most room a mark may take on a key, whatever its optical size.
+    var markBox: CGSize { CGSize(width: keyWidth - 6, height: keyHeight - 8) }
+    /// The system's 123 and Return labels measure 18pt on the phone.
+    var specialLabelSize: CGFloat { isPad ? 20 : (isLandscape ? 16 : 18) }
     var stripFontSize: CGFloat { isLandscape && !isPad ? 20 : 24 }
     var stripCellWidth: CGFloat { width < 360 ? 56 : 64 }
 
-    /// The y of the given row's top within the key area. On iPad the same rows
-    /// stretch to fill the taller area; on iPhone the pitch is fixed.
+    /// The y of the given row's top within the key area.
     func rowTop(_ row: Int) -> CGFloat {
-        if isPad {
-            let pitch = (keyAreaHeight - topInset - bottomInset - keyHeight) / 3
-            return topInset + CGFloat(row) * pitch
-        }
-        return topInset + CGFloat(row) * rowPitch
+        topInset + CGFloat(row) * rowPitch
     }
 }
 
@@ -188,7 +203,9 @@ enum KeyboardLayout {
             }
         }
 
-        // Row 3: side keys at the edges, the character keys centred as a block.
+        // Row 3: side keys at the edges, the character keys centred as a
+        // block, leaving the wider gaps beside the side keys that the system
+        // keyboard has.
         let row3 = rows[2]
         let y3 = m.rowTop(2)
         let leftKind: KeyKind
@@ -199,27 +216,28 @@ enum KeyboardLayout {
         }
         placed.append(PlacedKey(spec: KeySpec(leftKind), frame: CGRect(x: m.edgeLeft, y: y3, width: s, height: h), row: 2, isFirstInRow: true, isLastInRow: false))
         let blockWidth = CGFloat(row3.count) * k + CGFloat(row3.count - 1) * g
-        let blockStart = (m.width - blockWidth) / 2
+        let blockStart = m.edgeLeft + (m.width - m.edgeLeft - m.edgeRight - blockWidth) / 2
         for (i, text) in row3.enumerated() {
             let frame = CGRect(x: blockStart + CGFloat(i) * pitch, y: y3, width: k, height: h)
             placed.append(PlacedKey(spec: character(text), frame: frame, row: 2, isFirstInRow: false, isLastInRow: false))
         }
         placed.append(PlacedKey(spec: KeySpec(.delete), frame: CGRect(x: m.width - m.edgeRight - s, y: y3, width: s, height: h), row: 2, isFirstInRow: false, isLastInRow: true))
 
-        // Row 4: layer key, optional globe, space, return.
+        // Row 4: layer key, optional globe, space, return. With a globe the
+        // layer key shrinks to a side key so the pair spans the corner key.
         let y4 = m.rowTop(3)
         let layerKind: KeyKind = layer == .letters ? .layer(.numbers) : .layer(.letters)
-        let layerWidth = needsGlobe ? s : 2 * s + g
+        let corner = m.cornerKeyWidth
+        let layerWidth = needsGlobe ? (corner - g) / 2 : corner
         placed.append(PlacedKey(spec: KeySpec(layerKind), frame: CGRect(x: m.edgeLeft, y: y4, width: layerWidth, height: h), row: 3, isFirstInRow: true, isLastInRow: false))
         var spaceStart = m.edgeLeft + layerWidth + g
         if needsGlobe {
-            placed.append(PlacedKey(spec: KeySpec(.globe), frame: CGRect(x: spaceStart, y: y4, width: s, height: h), row: 3, isFirstInRow: false, isLastInRow: false))
-            spaceStart += s + g
+            placed.append(PlacedKey(spec: KeySpec(.globe), frame: CGRect(x: spaceStart, y: y4, width: layerWidth, height: h), row: 3, isFirstInRow: false, isLastInRow: false))
+            spaceStart += layerWidth + g
         }
-        let returnWidth = 2 * s + g
-        let returnX = m.width - m.edgeRight - returnWidth
+        let returnX = m.width - m.edgeRight - corner
         placed.append(PlacedKey(spec: KeySpec(.space), frame: CGRect(x: spaceStart, y: y4, width: returnX - g - spaceStart, height: h), row: 3, isFirstInRow: false, isLastInRow: false))
-        placed.append(PlacedKey(spec: KeySpec(.returnKey), frame: CGRect(x: returnX, y: y4, width: returnWidth, height: h), row: 3, isFirstInRow: false, isLastInRow: true))
+        placed.append(PlacedKey(spec: KeySpec(.returnKey), frame: CGRect(x: returnX, y: y4, width: corner, height: h), row: 3, isFirstInRow: false, isLastInRow: true))
         return placed
     }
 }

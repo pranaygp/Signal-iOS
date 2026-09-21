@@ -43,14 +43,14 @@ open class BodyRangesTextView: OWSTextView, EditableMessageBodyDelegate, UITextV
         }
     }
 
-    private let customLayoutManager: NSLayoutManager
+    private let customLayoutManager: MisspellingLayoutManager
     private var iOS15EditMenu: BodyRangesTextViewIOS15EditMenu?
 
     public init() {
         let editableBody = EditableMessageBodyTextStorage(db: DependenciesBridge.shared.db)
         self.editableBody = editableBody
         let container = NSTextContainer()
-        let layoutManager = NSLayoutManager()
+        let layoutManager = MisspellingLayoutManager()
         self.customLayoutManager = layoutManager
         layoutManager.textStorage = editableBody
         layoutManager.addTextContainer(container)
@@ -78,6 +78,7 @@ open class BodyRangesTextView: OWSTextView, EditableMessageBodyDelegate, UITextV
 
     deinit {
         pickerView?.removeFromSuperview()
+        spellCheckTimer?.invalidate()
     }
 
     public required init?(coder: NSCoder) {
@@ -255,6 +256,100 @@ open class BodyRangesTextView: OWSTextView, EditableMessageBodyDelegate, UITextV
         }
         editableBody.setMessageBody(messageBody, txProvider: txProvider)
         editableBody.endEditing()
+        scheduleSpellCheck()
+    }
+
+    // MARK: - Misspellings
+
+    /// Whether words the system spell checker does not know get a red dotted
+    /// underline, the way the system marks them in fields it owns. Off by
+    /// default; the compose box turns it on from the person's setting.
+    ///
+    /// The marks are drawn by the layout manager rather than stored as
+    /// attributes: the text storage rebuilds its display string from the
+    /// message body on every edit and refuses attributes set from outside, so
+    /// an underline attribute would be wiped by the next keystroke. Drawing
+    /// them beside the text, and moving them with the edits, keeps them out
+    /// of the body-ranges styling altogether.
+    public var marksMisspellings = false {
+        didSet {
+            guard marksMisspellings != oldValue else { return }
+            if marksMisspellings {
+                scheduleSpellCheck()
+            } else {
+                spellCheckTimer?.invalidate()
+                spellCheckTimer = nil
+                customLayoutManager.misspelledRanges = []
+                setNeedsDisplay()
+            }
+        }
+    }
+
+    private static let spellCheckLanguage = "en_US"
+    private static let spellCheckDelay: TimeInterval = 0.15
+    private lazy var spellChecker = UITextChecker()
+    private var spellCheckTimer: Timer?
+
+    /// Checks shortly after the last change rather than on every keystroke:
+    /// a fast typist would otherwise pay for a whole-text check per letter,
+    /// and the word under the caret is skipped anyway until it is finished.
+    private func scheduleSpellCheck() {
+        guard marksMisspellings else { return }
+        spellCheckTimer?.invalidate()
+        spellCheckTimer = Timer.scheduledTimer(withTimeInterval: Self.spellCheckDelay, repeats: false) { [weak self] _ in
+            self?.checkSpelling()
+        }
+    }
+
+    private func checkSpelling() {
+        AssertIsOnMainThread()
+        guard marksMisspellings else { return }
+        let text = editableBody.hydratedPlaintext as NSString
+        let mentionRanges = editableBody.mentionRanges
+        let caret: Int? = selectedRange.length == 0 ? selectedRange.location : nil
+
+        var misspelled = [NSRange]()
+        var searchStart = 0
+        while searchStart < text.length {
+            let range = spellChecker.rangeOfMisspelledWord(
+                in: text as String,
+                range: NSRange(location: searchStart, length: text.length - searchStart),
+                startingAt: searchStart,
+                wrap: false,
+                language: Self.spellCheckLanguage,
+            )
+            guard range.location != NSNotFound, range.length > 0 else { break }
+            searchStart = range.upperBound
+            // A word still being typed is not wrong yet.
+            if let caret, range.location <= caret, caret <= range.upperBound { continue }
+            if mentionRanges.contains(where: { ($0.intersection(range)?.length ?? 0) > 0 }) { continue }
+            guard Self.isCheckable(range, in: text) else { continue }
+            misspelled.append(range)
+        }
+
+        guard misspelled != customLayoutManager.misspelledRanges else { return }
+        customLayoutManager.misspelledRanges = misspelled
+        setNeedsDisplay()
+    }
+
+    /// Whether a word the checker flagged is one the person meant as English.
+    /// Marks encoded as Qiuling private-use points are not words the checker
+    /// can judge; digits, addresses and links are not spelt.
+    private static func isCheckable(_ range: NSRange, in text: NSString) -> Bool {
+        // Widen to the run between spaces so "example.com/nonsense" is judged
+        // as the link it is rather than by its last piece.
+        let separators = CharacterSet.whitespacesAndNewlines
+        let before = text.rangeOfCharacter(from: separators, options: .backwards, range: NSRange(location: 0, length: range.location))
+        let start = before.location == NSNotFound ? 0 : before.upperBound
+        let after = text.rangeOfCharacter(from: separators, range: NSRange(location: range.upperBound, length: text.length - range.upperBound))
+        let end = after.location == NSNotFound ? text.length : after.location
+        let run = text.substring(with: NSRange(location: start, length: end - start))
+
+        if run.unicodeScalars.contains(where: { $0.value >= 0xF0000 }) { return false }
+        if run.rangeOfCharacter(from: .decimalDigits) != nil { return false }
+        if run.contains("/") || run.contains("@") { return false }
+        if run.range(of: #"\.\p{L}"#, options: .regularExpression) != nil { return false }
+        return true
     }
 
     public func scrollToBottom() {
@@ -693,6 +788,9 @@ open class BodyRangesTextView: OWSTextView, EditableMessageBodyDelegate, UITextV
 
         bodyRangesDelegate?.textViewDidChangeSelection?(textView)
         updateMentionState()
+        // Leaving a word is what finishes it, so the caret moving away is
+        // as much a reason to look again as a keystroke.
+        scheduleSpellCheck()
     }
 
     open func textViewDidChange(_ textView: UITextView) {
@@ -703,6 +801,7 @@ open class BodyRangesTextView: OWSTextView, EditableMessageBodyDelegate, UITextV
         bodyRangesDelegate?.textViewDidChange?(textView)
         if editableBody.hydratedPlaintext.isEmpty { updateMentionState() }
         self.textAlignment = editableBody.naturalTextAlignment
+        scheduleSpellCheck()
     }
 
     open func textViewShouldBeginEditing(_ textView: UITextView) -> Bool {
@@ -796,6 +895,106 @@ open class BodyRangesTextView: OWSTextView, EditableMessageBodyDelegate, UITextV
         )
 
         return UIMenu(children: [formatMenu] + suggestedActions)
+    }
+}
+
+// MARK: -
+
+/// Draws a red dotted line under misspelled words without touching the
+/// text's attributes, and keeps the marked ranges in step with edits so they
+/// stay under their words between one spelling check and the next.
+final class MisspellingLayoutManager: NSLayoutManager {
+
+    private var storedMisspelledRanges: [NSRange] = []
+
+    var misspelledRanges: [NSRange] {
+        get { storedMisspelledRanges }
+        set {
+            let stale = storedMisspelledRanges
+            storedMisspelledRanges = newValue
+            guard let textStorage else { return }
+            let length = textStorage.length
+            for range in stale + newValue {
+                guard let clamped = range.intersection(NSRange(location: 0, length: length)), clamped.length > 0 else { continue }
+                invalidateDisplay(forCharacterRange: clamped)
+            }
+        }
+    }
+
+    override func processEditing(
+        for textStorage: NSTextStorage,
+        edited editMask: NSTextStorage.EditActions,
+        range newCharRange: NSRange,
+        changeInLength delta: Int,
+        invalidatedRange invalidatedCharRange: NSRange,
+    ) {
+        super.processEditing(for: textStorage, edited: editMask, range: newCharRange, changeInLength: delta, invalidatedRange: invalidatedCharRange)
+        guard editMask.contains(.editedCharacters), !storedMisspelledRanges.isEmpty else { return }
+        // The range as it was before the edit: what replaced it is newCharRange.
+        // Layout for everything from the edit on is being redone anyway, so
+        // the moved ranges need no invalidation of their own.
+        let replaced = NSRange(location: newCharRange.location, length: max(0, newCharRange.length - delta))
+        storedMisspelledRanges = storedMisspelledRanges.compactMap { range in
+            if range.upperBound < replaced.location {
+                return range
+            }
+            if range.location > replaced.upperBound {
+                return NSRange(location: range.location + delta, length: range.length)
+            }
+            // Touched by the edit: the word is being changed, so its verdict
+            // no longer applies. The next check will say.
+            return nil
+        }
+    }
+
+    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
+        super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
+        guard
+            !misspelledRanges.isEmpty,
+            let textStorage,
+            let context = UIGraphicsGetCurrentContext()
+        else { return }
+
+        let shownCharacters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        let color = Theme.isDarkThemeEnabled ? Brand.vermilion : Brand.error
+        let scale = max(1, UIScreen.main.scale)
+
+        context.saveGState()
+        context.setStrokeColor(color.cgColor)
+        context.setLineCap(.butt)
+        for range in misspelledRanges {
+            guard
+                let visible = range.intersection(shownCharacters),
+                visible.length > 0,
+                visible.upperBound <= textStorage.length
+            else { continue }
+            let glyphRange = self.glyphRange(forCharacterRange: visible, actualCharacterRange: nil)
+            guard glyphRange.length > 0, let container = textContainer(forGlyphAt: glyphRange.location, effectiveRange: nil) else { continue }
+
+            // The size decides how thick the line is and how far it sits
+            // below the baseline. The Qiuling face carries no underline
+            // metrics of its own, so a tenth of the size is used: its marks
+            // reach only a twentieth below the baseline, and the line must
+            // clear them.
+            let font = (textStorage.attribute(.font, at: visible.location, effectiveRange: nil) as? UIFont) ?? UIFont.systemFont(ofSize: UIFont.systemFontSize)
+            let thickness = max(1, (font.pointSize / 20).rounded())
+            let drop = font.pointSize / 10
+            context.setLineWidth(thickness)
+            context.setLineDash(phase: 0, lengths: [thickness, thickness])
+
+            enumerateLineFragments(forGlyphRange: glyphRange) { lineRect, _, _, lineGlyphRange, _ in
+                guard let inLine = glyphRange.intersection(lineGlyphRange), inLine.length > 0 else { return }
+                let bounds = self.boundingRect(forGlyphRange: inLine, in: container)
+                let baseline = lineRect.minY + self.location(forGlyphAt: inLine.location).y
+                // Top edge on a device pixel, so the dots stay crisp.
+                let top = min(baseline + drop, lineRect.maxY - thickness) + origin.y
+                let y = (top * scale).rounded() / scale + thickness / 2
+                context.move(to: CGPoint(x: bounds.minX + origin.x, y: y))
+                context.addLine(to: CGPoint(x: bounds.maxX + origin.x, y: y))
+                context.strokePath()
+            }
+        }
+        context.restoreGState()
     }
 }
 

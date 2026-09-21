@@ -5,7 +5,13 @@
 
 import CoreText
 import Foundation
+#if canImport(UIKit)
 import UIKit
+#endif
+
+// `Scripts/qiuling-encoder-test.swift` compiles this file on macOS against the
+// bundled font, so everything the encoder itself needs stays on Foundation and
+// CoreText; only the UIFont conveniences are gated.
 
 /// The bundled Qiuling font, reachable two ways: registered with the process
 /// so `UIFont(name:)` finds it for labels, and as a CoreText font made straight
@@ -35,12 +41,18 @@ final class QiulingFont {
             let descriptors = CTFontManagerCreateFontDescriptorsFromData(data as CFData) as? [CTFontDescriptor]
             descriptor = descriptors?.first
         }
+        #if canImport(UIKit)
         isAvailable = UIFont(name: Self.familyName, size: 12) != nil && descriptor != nil
+        #else
+        isAvailable = descriptor != nil
+        #endif
     }
 
+    #if canImport(UIKit)
     func uiFont(size: CGFloat) -> UIFont? {
         UIFont(name: Self.familyName, size: size)
     }
+    #endif
 
     /// A CoreText font of the file at `size`, independent of registration.
     func ctFont(size: CGFloat) -> CTFont? {
@@ -87,45 +99,31 @@ final class QiulingFont {
     }
 }
 
-/// Turns Latin text into the private-use scalars the font draws, so a
-/// message reads as Qiuling in any app that has the font and in the app's own
-/// bubbles. The table is glyph → scalar, built from what the font itself
-/// returns for every private-use point it knows; encoding then asks CoreText
-/// to shape the text exactly as the screen would and reads the glyphs back.
-final class QiulingEncoder {
-    static let shared = QiulingEncoder()
-
+/// The encoding itself, over one CoreText font: a table from glyph to the
+/// private-use scalar the font reaches it from, built by asking the font for
+/// the glyph of every point in the plane, letters filling only what the points
+/// left. Encoding shapes the text exactly as the screen would and reads the
+/// glyphs back through the table.
+///
+/// Not every glyph the lookups can produce has a point. The morpheme rules use
+/// boundary duplicates — `s.suf`, the plural s that closes `jumps` — which are
+/// a letter's drawing under another name so later lookups leave it alone, and
+/// the font build gives those no point of their own. A glyph the table does not
+/// know therefore falls back to the points of the letters it covers, one by
+/// one; the drawing is the same, and a plain letter never reaches the field.
+struct QiulingEncoderCore {
     static let planeStart: UInt32 = 0xF0000
     static let planeLength: UInt32 = 60000
 
-    private(set) var isReady = false
-    private var table: [CGGlyph: UInt32] = [:]
-    private var buildStarted = false
-    private var readyHandlers: [() -> Void] = []
+    let font: CTFont
+    private(set) var table: [CGGlyph: UInt32] = [:]
+    /// Each letter a–z (as its UTF-16 unit) to its own point.
+    private(set) var letterPoints: [UInt16: UInt32] = [:]
 
-    private init() {}
-
-    /// Builds the table off the main queue; `onReady` runs on the main queue.
-    func prepare(onReady: @escaping () -> Void) {
-        if isReady { onReady(); return }
-        readyHandlers.append(onReady)
-        guard !buildStarted else { return }
-        buildStarted = true
-        DispatchQueue.global(qos: .utility).async {
-            let built = Self.buildTable()
-            DispatchQueue.main.async {
-                self.table = built
-                self.isReady = true
-                let handlers = self.readyHandlers
-                self.readyHandlers = []
-                handlers.forEach { $0() }
-            }
-        }
-    }
-
-    private static func buildTable() -> [CGGlyph: UInt32] {
-        guard let font = QiulingFont.shared.ctFont(size: 24) else { return [:] }
-        var table: [CGGlyph: UInt32] = [:]
+    /// `spaceVariantPoints` are the points of the contextual space drawings,
+    /// which must never encode: a space stays U+0020 whichever form was drawn.
+    init(font: CTFont, spaceVariantPoints: [UInt32]) {
+        self.font = font
 
         // First writer wins, so the private-use pass claims every glyph it
         // can and the Latin pass afterwards only fills what is left.
@@ -147,8 +145,8 @@ final class QiulingEncoder {
 
         var chunk: [UInt32] = []
         chunk.reserveCapacity(1024)
-        for offset in 0..<planeLength {
-            chunk.append(planeStart + offset)
+        for offset in 0..<Self.planeLength {
+            chunk.append(Self.planeStart + offset)
             if chunk.count == 1024 {
                 record(chunk)
                 chunk.removeAll(keepingCapacity: true)
@@ -158,21 +156,24 @@ final class QiulingEncoder {
         // The same glyph reached from both a letter and its point encodes as the point.
         record(Array(0x61...0x7A) + [0x20])
 
-        // Spaces never encode to a point; the rule in `encode` keeps them U+0020
-        // anyway, but the table should not offer the option.
-        var space: [UniChar] = [0x20]
-        var spaceGlyph: [CGGlyph] = [0]
-        CTFontGetGlyphsForCharacters(font, &space, &spaceGlyph, 1)
-        table[spaceGlyph[0]] = nil
-        for point in GroupMappings.shared.spaceVariantPoints {
-            if let unicode = Unicode.Scalar(point) {
-                var units = Array(String(Character(unicode)).utf16)
-                var glyphs = [CGGlyph](repeating: 0, count: units.count)
-                CTFontGetGlyphsForCharacters(font, &units, &glyphs, units.count)
-                if glyphs[0] != 0 { table[glyphs[0]] = nil }
+        for point in spaceVariantPoints {
+            if let glyph = Self.glyph(of: point, in: font) { table[glyph] = nil }
+        }
+        if let glyph = Self.glyph(of: 0x20, in: font) { table[glyph] = nil }
+
+        for letter in UInt32(0x61)...0x7A {
+            if let glyph = Self.glyph(of: letter, in: font), let point = table[glyph] {
+                letterPoints[UInt16(letter)] = point
             }
         }
-        return table
+    }
+
+    private static func glyph(of scalar: UInt32, in font: CTFont) -> CGGlyph? {
+        guard let unicode = Unicode.Scalar(scalar) else { return nil }
+        var units = Array(String(Character(unicode)).utf16)
+        var glyphs = [CGGlyph](repeating: 0, count: units.count)
+        CTFontGetGlyphsForCharacters(font, &units, &glyphs, units.count)
+        return glyphs[0] == 0 ? nil : glyphs[0]
     }
 
     /// Lowercases and drops apostrophes, as the app's segmenter does; digits,
@@ -181,16 +182,24 @@ final class QiulingEncoder {
         text.lowercased().replacingOccurrences(of: "[’‘']", with: "", options: .regularExpression)
     }
 
-    func encode(_ text: String) -> String {
-        let source = Self.normalise(text)
-        guard isReady, !source.isEmpty, let font = QiulingFont.shared.ctFont(size: 24) else { return source }
-        let attributed = NSAttributedString(string: source, attributes: [.font: font])
-        let line = CTLineCreateWithAttributedString(attributed)
-        guard let runs = CTLineGetGlyphRuns(line) as? [CTRun] else { return source }
-        let utf16 = Array(source.utf16)
+    /// One shaped glyph and the stretch of the source it stands for.
+    struct ShapedGlyph {
+        let glyph: CGGlyph
+        let range: Range<Int>
+        let covered: String
+        let isQiulingFont: Bool
+        let point: UInt32?
+    }
 
-        struct Piece { let start: Int; let text: String }
-        var pieces: [Piece] = []
+    /// The text as CoreText lays it out, in source order.
+    func shape(_ source: String) -> [ShapedGlyph] {
+        let attributed = NSAttributedString(string: source, attributes: [kCTFontAttributeName as NSAttributedString.Key: font])
+        let line = CTLineCreateWithAttributedString(attributed)
+        guard let runs = CTLineGetGlyphRuns(line) as? [CTRun] else { return [] }
+        let utf16 = Array(source.utf16)
+        let qiulingName = CTFontCopyPostScriptName(font) as String
+
+        var shaped: [ShapedGlyph] = []
         for run in runs {
             let count = CTRunGetGlyphCount(run)
             guard count > 0 else { continue }
@@ -201,23 +210,99 @@ final class QiulingEncoder {
             CTRunGetStringIndices(run, CFRange(location: 0, length: count), &indices)
             let attributes = CTRunGetAttributes(run) as NSDictionary
             let runFont = attributes[kCTFontAttributeName as String] as! CTFont
-            let isQiuling = (CTFontCopyPostScriptName(runFont) as String) == QiulingFont.familyName
+            let isQiuling = (CTFontCopyPostScriptName(runFont) as String) == qiulingName
 
             let order = indices.indices.sorted { indices[$0] < indices[$1] }
             for (n, i) in order.enumerated() {
                 let start = Int(indices[i])
                 let end = n + 1 < order.count ? Int(indices[order[n + 1]]) : Int(range.location + range.length)
                 guard end > start else { continue }
-                let substring = String(utf16: utf16[start..<end]) ?? ""
-                let onlySpaces = substring.unicodeScalars.allSatisfy { $0.value == 0x20 }
-                if !onlySpaces, isQiuling, let point = table[glyphs[i]], let scalar = Unicode.Scalar(point) {
-                    pieces.append(Piece(start: start, text: String(Character(scalar))))
-                } else {
-                    pieces.append(Piece(start: start, text: substring))
-                }
+                shaped.append(ShapedGlyph(
+                    glyph: glyphs[i],
+                    range: start..<end,
+                    covered: String(decoding: utf16[start..<end], as: UTF16.self),
+                    isQiulingFont: isQiuling,
+                    point: isQiuling ? table[glyphs[i]] : nil
+                ))
             }
         }
-        return pieces.sorted { $0.start < $1.start }.map(\.text).joined()
+        return shaped.sorted { $0.range.lowerBound < $1.range.lowerBound }
+    }
+
+    func encode(_ text: String) -> String {
+        let source = Self.normalise(text)
+        guard !source.isEmpty else { return source }
+        var out = ""
+        for glyph in shape(source) {
+            let onlySpaces = glyph.covered.unicodeScalars.allSatisfy { $0.value == 0x20 }
+            if !onlySpaces, let point = glyph.point, let scalar = Unicode.Scalar(point) {
+                out.unicodeScalars.append(scalar)
+            } else {
+                out += lettersEncoded(glyph.covered)
+            }
+        }
+        return out
+    }
+
+    /// `text` with each letter a–z replaced by its own point; anything else
+    /// passes through.
+    private func lettersEncoded(_ text: String) -> String {
+        var out = ""
+        for unit in text.utf16 {
+            if let point = letterPoints[unit], let scalar = Unicode.Scalar(point) {
+                out.unicodeScalars.append(scalar)
+            } else if let scalar = Unicode.Scalar(UInt32(unit)) {
+                out.unicodeScalars.append(scalar)
+            }
+        }
+        return out
+    }
+}
+
+/// Turns Latin text into the private-use scalars the font draws, so a
+/// message reads as Qiuling in any app that has the font and in the app's own
+/// bubbles. The work is `QiulingEncoderCore`'s; this owns the one table for
+/// the process and builds it off the main queue.
+final class QiulingEncoder {
+    static let shared = QiulingEncoder()
+
+    static let planeStart = QiulingEncoderCore.planeStart
+    static let planeLength = QiulingEncoderCore.planeLength
+
+    private(set) var isReady = false
+    private var core: QiulingEncoderCore?
+    private var buildStarted = false
+    private var readyHandlers: [() -> Void] = []
+
+    private init() {}
+
+    /// Builds the table off the main queue; `onReady` runs on the main queue.
+    func prepare(onReady: @escaping () -> Void) {
+        if isReady { onReady(); return }
+        readyHandlers.append(onReady)
+        guard !buildStarted else { return }
+        buildStarted = true
+        DispatchQueue.global(qos: .utility).async {
+            let built = QiulingFont.shared.ctFont(size: 24).map {
+                QiulingEncoderCore(font: $0, spaceVariantPoints: GroupMappings.shared.spaceVariantPoints)
+            }
+            DispatchQueue.main.async {
+                self.core = built
+                self.isReady = true
+                let handlers = self.readyHandlers
+                self.readyHandlers = []
+                handlers.forEach { $0() }
+            }
+        }
+    }
+
+    static func normalise(_ text: String) -> String {
+        QiulingEncoderCore.normalise(text)
+    }
+
+    func encode(_ text: String) -> String {
+        guard isReady, let core else { return Self.normalise(text) }
+        return core.encode(text)
     }
 }
 
@@ -250,11 +335,5 @@ final class GroupMappings {
         mapping.keys
             .filter { $0.count >= 2 && !$0.hasPrefix(" ") && $0.hasPrefix(letter) }
             .sorted { $0.count != $1.count ? $0.count < $1.count : $0 < $1 }
-    }
-}
-
-private extension String {
-    init?(utf16 slice: ArraySlice<UInt16>) {
-        self.init(decoding: slice, as: UTF16.self)
     }
 }

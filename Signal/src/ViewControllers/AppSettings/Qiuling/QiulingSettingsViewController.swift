@@ -139,6 +139,18 @@ class QiulingSettingsViewController: OWSTableViewController2 {
             : "Type with Qiuling anywhere. In Settings, tap General, then Keyboard, then Keyboards, then Add New Keyboard, and choose Qiuling. Then hold the globe key on any keyboard to switch to it. The keys show marks instead of letters, so what you type is hard to read over your shoulder."
         contents.add(keyboard)
 
+        let typing = OWSTableSection()
+        typing.headerTitle = "Typing"
+        typing.add(OWSTableItem.switch(
+            withText: "Mark misspellings",
+            isOn: { QiulingTypingSettings.marksMisspellings },
+            actionBlock: { uiSwitch in
+                QiulingTypingSettings.marksMisspellings = uiSwitch.isOn
+            },
+        ))
+        typing.footerTitle = "Words the dictionary doesn't know get a red dotted line while you write a message. Qiuling reads fast, so a slip is easy to miss."
+        contents.add(typing)
+
         self.contents = contents
     }
 
@@ -256,6 +268,20 @@ class QiulingSettingsViewController: OWSTableViewController2 {
             isInstalling = false
             updateTableContents()
         }
+    }
+}
+
+// MARK: - Typing
+
+/// What the person has chosen about writing messages. Read by the compose
+/// box, which watches `UserDefaults.didChangeNotification` for changes.
+enum QiulingTypingSettings {
+    private static let marksMisspellingsKey = "Qiuling.marksMisspellings"
+
+    /// Whether the compose box underlines words the dictionary doesn't know.
+    static var marksMisspellings: Bool {
+        get { UserDefaults.standard.object(forKey: marksMisspellingsKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: marksMisspellingsKey) }
     }
 }
 

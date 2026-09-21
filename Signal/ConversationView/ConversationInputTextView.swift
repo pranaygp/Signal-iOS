@@ -76,6 +76,25 @@ class ConversationInputTextView: BodyRangesTextView {
 
         ensurePlaceholderConstraints()
         updatePlaceholderVisibility()
+
+        applyTypingSettings()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(typingSettingsDidChange),
+            name: UserDefaults.didChangeNotification,
+            object: nil,
+        )
+    }
+
+    private func applyTypingSettings() {
+        marksMisspellings = QiulingTypingSettings.marksMisspellings
+    }
+
+    @objc
+    private func typingSettingsDidChange() {
+        DispatchQueue.main.async { [weak self] in
+            self?.applyTypingSettings()
+        }
     }
 
     required init?(coder: NSCoder) {

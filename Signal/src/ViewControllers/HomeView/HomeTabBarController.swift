@@ -56,7 +56,8 @@ class HomeTabBarController: UITabBarController {
             case .stories:
                 return UIImage(named: "tab-stories")
             case .practice:
-                return UIImage(systemName: "character.book.closed")
+                // Signal's tab glyphs are filled in both states; match them.
+                return UIImage(systemName: "character.book.closed.fill")
             }
         }
 

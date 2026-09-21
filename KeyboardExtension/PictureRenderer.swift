@@ -6,38 +6,47 @@
 import UIKit
 import UniformTypeIdentifiers
 
-/// The message as a PNG, set the way the app's Write screen sets it: the
-/// script at 56pt, wrapped to a chat's width, on the appearance's paper.
+/// The message as a PNG: the script at 64pt, white on black whatever the
+/// appearance, wrapped only once a line would pass the width a chat can show,
+/// and no wider than its text — so a short message is a small picture.
 enum PictureRenderer {
-    static let canvasWidth: CGFloat = 900
-    static let margin: CGFloat = 40
+    static let fontSize: CGFloat = 64
+    static let maxTextWidth: CGFloat = 1000
+    static let padding: CGFloat = 28
 
-    static func render(_ text: String, palette: KeyboardPalette) -> Data? {
+    static func render(_ text: String) -> Data? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let font = QiulingFont.shared.uiFont(size: 56) else { return nil }
+        guard !trimmed.isEmpty, let font = QiulingFont.shared.uiFont(size: fontSize) else { return nil }
         let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = 10
+        paragraph.lineBreakMode = .byWordWrapping
         paragraph.alignment = .left
         let attributed = NSAttributedString(string: trimmed, attributes: [
             .font: font,
-            .foregroundColor: palette.pictureInk,
+            .foregroundColor: UIColor.white,
             .paragraphStyle: paragraph,
         ])
-        let textWidth = canvasWidth - 2 * margin
+        let options: NSStringDrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
         let bounds = attributed.boundingRect(
-            with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            with: CGSize(width: maxTextWidth, height: .greatestFiniteMagnitude),
+            options: options,
             context: nil
         )
-        let size = CGSize(width: canvasWidth, height: ceil(bounds.height) + 2 * margin)
+        let textSize = CGSize(width: ceil(bounds.width), height: ceil(bounds.height))
+        let size = CGSize(width: textSize.width + 2 * padding, height: textSize.height + 2 * padding)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 2
         format.opaque = true
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
         let image = renderer.image { context in
-            palette.pictureBackground.setFill()
+            UIColor.black.setFill()
             context.fill(CGRect(origin: .zero, size: size))
-            attributed.draw(with: CGRect(x: margin, y: margin, width: textWidth, height: bounds.height), options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+            // Drawn into the width it was measured at, so the lines break
+            // where they were counted; the canvas is only as wide as the ink.
+            attributed.draw(
+                with: CGRect(x: padding, y: padding, width: maxTextWidth, height: textSize.height),
+                options: options,
+                context: nil
+            )
         }
         return image.pngData()
     }
