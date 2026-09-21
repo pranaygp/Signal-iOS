@@ -196,8 +196,9 @@ final class KeyboardViewController: UIInputViewController {
     /// across the gap.
     override func updateViewConstraints() {
         super.updateViewConstraints()
-        let natural = metrics?.totalHeight ?? naturalMetrics()?.totalHeight ?? 260
-        let wanted = natural + view.safeAreaInsets.bottom
+        let m = metrics ?? naturalMetrics()
+        let natural = m?.totalHeight ?? 260
+        let wanted = natural + (m?.bottomClearance(reportedInset: view.safeAreaInsets.bottom) ?? view.safeAreaInsets.bottom)
         if let heightConstraint {
             if heightConstraint.constant != wanted { heightConstraint.constant = wanted }
         } else {
@@ -273,7 +274,7 @@ final class KeyboardViewController: UIInputViewController {
         // there is one — an over-tall view leaves a blank band of backdrop
         // above the strip, where the eye expects nothing, instead of keys
         // drifting up the screen or rows spread apart.
-        let top = max(0, view.bounds.height - view.safeAreaInsets.bottom - new.totalHeight)
+        let top = max(0, view.bounds.height - new.bottomClearance(reportedInset: view.safeAreaInsets.bottom) - new.totalHeight)
         let stripFrame = CGRect(x: 0, y: top, width: width, height: new.stripHeight)
         let keyAreaFrame = CGRect(x: 0, y: top + new.stripHeight, width: width, height: new.keyAreaHeight)
         if strip.frame != stripFrame { strip.frame = stripFrame }

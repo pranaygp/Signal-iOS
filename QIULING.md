@@ -256,26 +256,23 @@ refreshes and stages with the app's and Safari's. As with the Safari
 extension, the resources are added to the target as individual files, not a
 blue `Resources/` folder.
 
-Height: the layout has a natural height — the strip (44pt portrait, 38
-landscape) plus the key area (top inset + four rows at their pitch + bottom
-inset; 8 + 4·43 + 3·11 + 14 = 227pt portrait on the phone, 271 all told; the 14pt is the system keyboard's clearance above the dock, which the host reports a few points short of where it draws) — and the
-keyboard asks for that plus `view.safeAreaInsets.bottom`, through one
-priority-999 constraint on its view installed in `updateViewConstraints` once
-the view is in the host's hierarchy (the template pattern; Apple DTS says the
-host settles on it a few hundred milliseconds after appearance) and refreshed
-from `viewSafeAreaInsetsDidChange`. The inset matters on a device: iOS 26
-draws its own dock — globe and microphone — *inside* the frame it hands a
-third-party keyboard, and reports that band as the view's bottom safe-area
-inset; the first TestFlight build asked for the natural height alone, so the
-dock covered the bottom row. The strip and rows now sit above the inset,
-whatever the host reports it as (no public constant; it is read, never
-assumed). The iOS 26.5 simulator host reports no such inset and ignores the
-constraint anyway (444pt in the app's Practice field; 874pt and growing per
-launch in Safari), and the Apple developer forums report the same for
-`allowsSelfSizing` and an `intrinsicContentSize` override, so neither is
-used. Whatever height the host gives, the rows keep their natural pitch
-anchored to the bottom of the safe area; an over-tall host shows a blank band
-of backdrop above the strip.
+Height. The keyboard asks for its natural height plus the dock clearance
+through a single priority-999 constraint on its view (installed in
+`updateViewConstraints`, the pattern Apple's template uses), and lays its
+strip and rows out anchored to the bottom of that clearance, so a host that
+hands over a taller frame — the iOS 26.5 simulator gives 444pt in the app and
+a growing full-screen frame in Safari, and Apple DTS confirms the height only
+applies after the first draw — leaves a blank band above the strip instead of
+rows drifting or spreading. The clearance is the larger of the host's
+reported bottom safe-area inset and 76pt on a portrait iPhone: iOS 26 draws
+the globe/microphone dock inside the keyboard's frame with no public API to
+measure it (forum threads 681404, 813579, 799003), the reported inset comes a
+few points short of where it draws, and 76pt is where the system keyboard's
+last row ends above the screen edge. Metrics are the device's system
+keyboard on a 402pt iPhone — 6pt margins, 34pt keys with 5.25pt gaps, 40pt
+keys on a 50pt pitch, 8pt corners, 6 + 4·40 + 3·10 = 196pt of rows under a
+44pt strip, 240 all told — not the simulator's, which draws a different,
+taller keyboard.
 
 Metrics (`KeyboardLayout.swift`) follow the iOS 26 system keyboard as measured
 pixel by pixel in the iOS 26.5 simulator on a 402pt iPhone, where the two

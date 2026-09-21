@@ -68,11 +68,13 @@ struct KeySpec {
 }
 
 /// The numbers that place every key, derived from the width the host gives
-/// us. They follow the iOS 26 system keyboard as measured pixel by pixel on a
-/// 402pt iPhone: 6.5pt outer margins, ten 33.5pt keys with 6pt gaps filling
-/// the width, 43pt keys on a 54pt pitch, 8pt corners. Narrower phones scale
-/// the key and gap together so a row still fills the width exactly; iPad
-/// keeps the same proportions on taller keys.
+/// us. They follow the iOS 26 system keyboard as measured on a 402pt iPhone
+/// — the device's, not the simulator's, which draws a different keyboard:
+/// 6pt outer margins, ten 34pt keys with 5.25pt gaps filling the width, 40pt
+/// keys on a 50pt pitch, 8pt corners, and the last row ending 76pt above the
+/// bottom of the screen. Other widths scale the key and gap together so a
+/// row still fills the width exactly; iPad keeps the proportions on taller
+/// keys.
 struct KeyboardMetrics {
     let width: CGFloat
     let isLandscape: Bool
@@ -80,12 +82,18 @@ struct KeyboardMetrics {
     let safeLeft: CGFloat
     let safeRight: CGFloat
 
-    /// The system's ratio of gap to key: 6 to 33.5 on a 389pt row.
-    private static let gapPerKey: CGFloat = 6 / 33.5
-    private static let referenceKeyHeight: CGFloat = 43
+    /// The system's ratio of gap to key: 5.25 to 34 on a 390pt row.
+    private static let gapPerKey: CGFloat = 5.25 / 34
+    private static let referenceKeyHeight: CGFloat = 40
+    private static let referenceWidth: CGFloat = 402
+    /// Where the system keyboard's last row ends, measured up from the bottom
+    /// of the screen on an iPhone in portrait: the dock and its gap. The host
+    /// reports the dock as a bottom safe-area inset, but a few points short of
+    /// where it draws, so this is the floor the layout keeps clear.
+    static let phoneDockClearance: CGFloat = 76
 
-    var edgeLeft: CGFloat { 6.5 + (isLandscape && !isPad ? safeLeft : 0) }
-    var edgeRight: CGFloat { 6.5 + (isLandscape && !isPad ? safeRight : 0) }
+    var edgeLeft: CGFloat { 6 + (isLandscape && !isPad ? safeLeft : 0) }
+    var edgeRight: CGFloat { 6 + (isLandscape && !isPad ? safeRight : 0) }
     private var rowWidth: CGFloat { width - edgeLeft - edgeRight }
     /// Ten keys and nine gaps span the row: k = row / (10 + 9·ratio).
     var keyWidth: CGFloat { rowWidth / (10 + 9 * Self.gapPerKey) }
@@ -98,18 +106,22 @@ struct KeyboardMetrics {
     var cornerKeyWidth: CGFloat { 2.5 * keyWidth + 1.5 * gap }
     var keyHeight: CGFloat {
         if isPad { return isLandscape ? 76 : 56 }
-        return isLandscape ? 32 : Self.referenceKeyHeight
+        // Wider phones get proportionally taller keys, as the system's do.
+        return isLandscape ? 32 : (Self.referenceKeyHeight * width / Self.referenceWidth).rounded()
     }
     var verticalGap: CGFloat {
         if isPad { return 12 }
-        return isLandscape ? 7 : 11
+        return isLandscape ? 7 : 10
     }
-    var topInset: CGFloat { isLandscape && !isPad ? 6 : 8 }
-    /// Below the last row, before the dock or the view's bottom. The system
-    /// keyboard leaves 14pt here on an iPhone; on a device the host also
-    /// reports the dock's inset a few points short of where it draws, so a
-    /// smaller gap puts the bottom row's corners under it.
-    var bottomInset: CGFloat { isPad ? 6 : (isLandscape ? 8 : 14) }
+    var topInset: CGFloat { 6 }
+    /// Below the last row: the rows end at the dock clearance, so nothing more.
+    var bottomInset: CGFloat { isPad ? 6 : (isLandscape ? 8 : 0) }
+    /// How much of the view's bottom the layout leaves alone: the host's
+    /// reported inset, or the measured dock clearance on a portrait iPhone if
+    /// that is larger.
+    func bottomClearance(reportedInset: CGFloat) -> CGFloat {
+        isPad || isLandscape ? reportedInset : max(reportedInset, Self.phoneDockClearance)
+    }
     var rowPitch: CGFloat { keyHeight + verticalGap }
     var stripHeight: CGFloat { isLandscape && !isPad ? 38 : 44 }
     /// Four rows at their pitch inside the insets; the dock, when the host
