@@ -74,6 +74,13 @@ class QiulingSettingsViewController: OWSTableViewController2 {
         alphabet.headerTitle = "Alphabet"
         alphabet.add(.label(withText: "Alphabet", accessoryText: status.displayName, accessoryType: .none))
         alphabet.add(.label(withText: "Marks", accessoryText: Self.countFormatter.string(from: NSNumber(value: status.marksCount)) ?? "\(status.marksCount)", accessoryType: .none))
+        // Whether the process can draw the script at all: if this ever says
+        // the system font, the log has the registration errors.
+        alphabet.add(.label(
+            withText: "Rendering",
+            accessoryText: status.isResolvable ? "Qiuling" : "System font — Qiuling did not load",
+            accessoryType: .none,
+        ))
         // Bold and italic are drawn faces of the font, not the system's fakes,
         // once the set carries them; a set without them says so.
         alphabet.add(.label(

@@ -110,30 +110,109 @@ public final class QiulingFonts {
     private var processRegisteredURLs: [URL] = []
 
     // MARK: - Process registration
+    //
+    // One rule governs everything below: the process must always end up with
+    // a Qiuling regular it can draw with. CoreText refuses to register a font
+    // for the process when a font with the same PostScript name is already
+    // registered phone-wide FROM A DIFFERENT FILE (it accepts the same file
+    // in both scopes). That is exactly the state an over-the-air update
+    // creates — the new regular is a new file, the old one is still installed
+    // phone-wide — and without handling it the swap fails, the downloaded set
+    // is dropped, and the bundled copy then fails for the same reason: the
+    // app draws in the system font with no error on screen. So a set is
+    // registered by first clearing this app's own phone-wide registrations
+    // of the family that point elsewhere, and registration is verified by
+    // looking the family up, not by trusting return codes alone.
 
-    /// Called by SignalUI's font registration, before it registers the bundle's
-    /// fonts. Registers the downloaded set, if there is one, and says so, so
-    /// the bundled files of the same family are skipped rather than colliding.
-    func registerCurrentForProcess() -> Bool {
-        guard let set = downloadedSet else { return false }
+    /// CoreText's "this file is already registered in that scope", which is
+    /// success for our purposes.
+    private static let alreadyRegistered = 105
+    /// Errors about the file itself, after which the downloaded set is not
+    /// worth keeping.
+    private static let badFileCodes: Set<Int> = [101, 103, 104]
+
+    /// Whether the regular can be created by name for this process.
+    static var isResolvable: Bool {
+        let font = CTFontCreateWithName(family as CFString, 12, nil)
+        return (CTFontCopyPostScriptName(font) as String) == family
+    }
+
+    /// Register one file for the process; `alreadyRegistered` counts as done.
+    private func registerFile(_ url: URL) -> Result<Void, CFError> {
         var error: Unmanaged<CFError>?
-        guard CTFontManagerRegisterFontsForURL(set.url as CFURL, .process, &error) else {
-            Logger.warn("downloaded font failed to register, falling back to the bundled one: \(String(describing: error?.takeRetainedValue()))")
-            forgetDownloaded()
-            return false
-        }
-        processRegisteredURLs = [set.url]
-        // A face that fails leaves the regular in place; CoreText synthesises
-        // that one style as it did before there were faces.
-        for (key, face) in set.faces {
-            if CTFontManagerRegisterFontsForURL(face.url as CFURL, .process, &error) {
-                processRegisteredURLs.append(face.url)
-            } else {
-                Logger.warn("downloaded \(key) face failed to register: \(String(describing: error?.takeRetainedValue()))")
+        if CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error) { return .success(()) }
+        let err = error!.takeRetainedValue()
+        return CFErrorGetCode(err) == Self.alreadyRegistered ? .success(()) : .failure(err)
+    }
+
+    /// Register `set` for the process, clearing a conflicting phone-wide
+    /// registration of ours if that is what stands in the way. Returns the
+    /// URLs now registered, or the regular's error.
+    private func registerForProcess(_ set: FontSet) -> Result<[URL], CFError> {
+        var attempt = registerFile(set.url)
+        if case .failure(let err) = attempt {
+            // Our phone-wide registrations of the family from other files —
+            // an earlier download since replaced, or the bundled copy when
+            // the download is what we want now. They are re-installed from
+            // this set once it is in.
+            let conflicting = registeredPhoneWide().filter { !set.urls.contains($0) }
+            if !conflicting.isEmpty {
+                Logger.warn("registering \(set.url.lastPathComponent) failed (\(CFErrorGetCode(err))); clearing \(conflicting.count) phone-wide registration(s) from other files and retrying")
+                unregisterPhoneWide(conflicting)
+                attempt = registerFile(set.url)
             }
         }
-        Logger.info("using downloaded Qiuling font \(set.url.lastPathComponent) with \(set.faces.count) faces")
-        return true
+        if case .failure(let err) = attempt { return .failure(err) }
+        var urls = [set.url]
+        // A face that fails leaves the regular in place; CoreText synthesises
+        // that one style as it did before there were faces.
+        for key in FontSet.orderedFaces {
+            guard let face = set.faces[key] else { continue }
+            switch registerFile(face.url) {
+            case .success: urls.append(face.url)
+            case .failure(let err): Logger.warn("\(key) face \(face.url.lastPathComponent) failed to register: \(err)")
+            }
+        }
+        return .success(urls)
+    }
+
+    /// Called by SignalUI's font registration, before it registers the bundle's
+    /// fonts. Registers the current set — the downloaded one when there is one
+    /// and it can be, else the bundled files — and says so, so the caller skips
+    /// the bundled files of the family rather than colliding with them.
+    func registerCurrentForProcess() -> Bool {
+        if let set = downloadedSet {
+            switch registerForProcess(set) {
+            case .success(let urls):
+                processRegisteredURLs = urls
+                Logger.info("using downloaded Qiuling font \(set.url.lastPathComponent) with \(urls.count - 1) faces")
+                logStatus("launch")
+                return true
+            case .failure(let err):
+                Logger.warn("downloaded font failed to register, falling back to the bundled one: \(err)")
+                if Self.badFileCodes.contains(CFErrorGetCode(err)) { forgetDownloaded() }
+            }
+        }
+        guard let bundled = Self.bundledSet else { return false }
+        switch registerForProcess(bundled) {
+        case .success(let urls):
+            processRegisteredURLs = urls
+            logStatus("launch")
+            return true
+        case .failure(let err):
+            Logger.error("bundled Qiuling font failed to register: \(err)")
+            logStatus("launch")
+            return false
+        }
+    }
+
+    /// One line saying whether the script can be drawn right now, and by what.
+    private func logStatus(_ context: String) {
+        let persistent = registeredPhoneWide()
+        let missing = persistent.filter { !FileManager.default.fileExists(atPath: $0.path) }.count
+        Logger.info("Qiuling font status (\(context)): resolvable=\(Self.isResolvable) process=\(processRegisteredURLs.count) file(s)"
+                    + " phoneWide=\(persistent.count) file(s)\(missing > 0 ? " (\(missing) missing on disk)" : "")"
+                    + " downloaded=\(downloadedSet != nil)")
     }
 
     private func forgetDownloaded() {
@@ -148,7 +227,7 @@ public final class QiulingFonts {
     }
 
     func noteBundledFontRegistered(at url: URL) {
-        if Self.isFamilyFile(url), !processRegisteredURLs.contains(url), downloadedSet == nil {
+        if Self.isFamilyFile(url), !processRegisteredURLs.contains(url) {
             processRegisteredURLs.append(url)
         }
     }
@@ -167,12 +246,15 @@ public final class QiulingFonts {
     /// Call once the UI is up: the phone-wide install can show a sheet.
     @MainActor
     public func start() {
-        installPhoneWideIfNeeded()
+        logStatus("start")
         mirrorForExtension()
         NotificationCenter.default.addObserver(
             forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main,
         ) { [weak self] _ in Task { @MainActor in self?.checkForUpdateIfDue() } }
-        checkForUpdateIfDue()
+        Task { @MainActor in
+            await installPhoneWideIfNeeded()
+            checkForUpdateIfDue()
+        }
     }
 
     // MARK: - Status
@@ -209,6 +291,8 @@ public final class QiulingFonts {
         public var displayName: String { buildId.prefix(1).uppercased() + buildId.dropFirst() }
         public let sha: String
         public let isUsingDownloadedCopy: Bool
+        /// Whether the process can draw with the font at all right now.
+        public let isResolvable: Bool
         /// How many of the derived faces (bold, italic, bold italic) the set in use carries.
         public let facesCount: Int
         /// When the font in use was built, if known.
@@ -239,7 +323,8 @@ public final class QiulingFonts {
             buildId: Self.buildId,
             sha: current?.sha ?? "",
             isUsingDownloadedCopy: downloaded,
-            facesCount: current?.faces.count ?? 0,
+            isResolvable: Self.isResolvable,
+            facesCount: processRegisteredURLs.isEmpty ? 0 : processRegisteredURLs.count - 1,
             buildDate: downloaded ? downloadedBuildDate : Self.bundledBuildDate,
             lastCheck: lastCheck,
             updatesAvailable: manifestURL != nil && bypassToken != nil,
@@ -474,10 +559,7 @@ public final class QiulingFonts {
                 keep.insert(blocksDest)
             }
         }
-        // Keep only the new files; anything else in the store is superseded.
-        for old in (try? FileManager.default.contentsOfDirectory(at: storeDirectory, includingPropertiesForKeys: nil)) ?? [] where !keep.contains(old) {
-            try? FileManager.default.removeItem(at: old)
-        }
+        let previous = downloadedSet
         defaults.set(entry.sha256, forKey: currentShaKey)
         defaults.set(faces.mapValues { $0.sha }, forKey: currentFacesKey)
         if let builtAt = entry.builtAt {
@@ -487,11 +569,36 @@ public final class QiulingFonts {
         }
         Logger.info("Qiuling font updated to \(entry.sha256.prefix(8)) with \(faces.count) faces")
 
-        if let set = downloadedSet { swapForProcess(to: set) }
+        guard let set = downloadedSet else { return true }
+        if !swapForProcess(to: set) {
+            // The process keeps the set it had; the record goes back with it,
+            // so the next launch does not try the same swap blind.
+            if let previous {
+                defaults.set(previous.sha, forKey: currentShaKey)
+                defaults.set(previous.faceShas, forKey: currentFacesKey)
+            } else {
+                forgetDownloaded()
+            }
+            throw OWSGenericError("the new font could not be registered; keeping the current one")
+        }
         mirrorForExtension()
-        installPhoneWideIfNeeded()
+        await installPhoneWideIfNeeded()
+        // Superseded files go only once nothing registered points at them: a
+        // phone-wide registration of a file that has gone is what blocked
+        // every later registration of the family.
+        cleanUpStore()
         NotificationCenter.default.post(name: Self.fontDidChange, object: nil)
         return true
+    }
+
+    /// Delete store files that no registration (ours or the phone's) refers to.
+    private func cleanUpStore() {
+        let inUse = Set((currentSet?.urls ?? []) + registeredPhoneWide() + processRegisteredURLs)
+        let blocks = currentSet.map { storeDirectory.appendingPathComponent("\($0.sha).blocks.json") }
+        for file in (try? FileManager.default.contentsOfDirectory(at: storeDirectory, includingPropertiesForKeys: nil)) ?? [] {
+            if inUse.contains(file) || file == blocks { continue }
+            try? FileManager.default.removeItem(at: file)
+        }
     }
 
     /// Posted after a new font (and its block list) has been swapped in.
@@ -499,9 +606,11 @@ public final class QiulingFonts {
 
     /// Replace the process's copy of the family with the new set and ask the
     /// UI to redraw. Text already laid out keeps its old glyphs until it is
-    /// rebuilt; the theme-change notification rebuilds most of it.
+    /// rebuilt; the theme-change notification rebuilds most of it. If the new
+    /// set will not register, the old one is put back: the process is never
+    /// left without the font.
     @MainActor
-    private func swapForProcess(to set: FontSet) {
+    private func swapForProcess(to set: FontSet) -> Bool {
         // A launch that registered the bundled files itself (the practice-only
         // simulator run) never told us; the bundled files are what to replace.
         let old = processRegisteredURLs.isEmpty ? Self.bundledURLs : processRegisteredURLs
@@ -509,16 +618,19 @@ public final class QiulingFonts {
             CTFontManagerUnregisterFontsForURL(url as CFURL, .process, nil)
         }
         processRegisteredURLs = []
-        var error: Unmanaged<CFError>?
-        for url in set.urls {
-            if CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error) {
-                processRegisteredURLs.append(url)
-            } else {
-                Logger.warn("could not swap \(url.lastPathComponent) in-process: \(String(describing: error?.takeRetainedValue())); it applies on next launch")
-            }
-        }
-        if !processRegisteredURLs.isEmpty {
+        switch registerForProcess(set) {
+        case .success(let urls):
+            processRegisteredURLs = urls
+            logStatus("swap")
             NotificationCenter.default.post(name: .themeDidChange, object: nil)
+            return true
+        case .failure(let err):
+            Logger.error("could not swap the Qiuling font in-process: \(err); keeping the previous one")
+            for url in old where (try? registerFile(url).get()) != nil {
+                processRegisteredURLs.append(url)
+            }
+            logStatus("swap failed")
+            return false
         }
     }
 
@@ -570,10 +682,55 @@ public final class QiulingFonts {
     /// Register the current set for every app on the phone (Settings ›
     /// General › Fonts) when the installed copy is not the one in use.
     @MainActor
-    private func installPhoneWideIfNeeded() {
+    private func installPhoneWideIfNeeded() async {
         guard let current = currentSet else { return Logger.warn("no Qiuling font to install") }
+        // Only a set this process draws with is installed, so both scopes
+        // always hold the same files — the one arrangement CoreText accepts
+        // without complaint.
+        guard !processRegisteredURLs.isEmpty, processRegisteredURLs.contains(current.url) else {
+            return Logger.warn("not installing phone-wide: the process is not drawing with \(current.url.lastPathComponent)")
+        }
         if isInstalledPhoneWide(current), !registeredPhoneWide().isEmpty { return }
-        Task { _ = await installPhoneWide() }
+        _ = await installPhoneWide()
+    }
+
+    /// Unregister phone-wide registrations one by one, synchronously, so the
+    /// caller knows they are gone before it registers anything in their place.
+    /// A registration whose file has since been deleted may refuse to go by
+    /// URL; it is then removed by its descriptor, which is how the registry
+    /// itself refers to it.
+    private func unregisterPhoneWide(_ urls: [URL]) {
+        let byURL = Dictionary(registeredPhoneWideDescriptors().map { ($0.url, $0.descriptor) }, uniquingKeysWith: { a, _ in a })
+        for url in urls {
+            var error: Unmanaged<CFError>?
+            if CTFontManagerUnregisterFontsForURL(url as CFURL, .persistent, &error) { continue }
+            Logger.warn("could not unregister phone-wide \(url.lastPathComponent) by URL: \(String(describing: error?.takeRetainedValue())); trying its descriptor")
+            guard let descriptor = byURL[url] else { continue }
+            let done = DispatchSemaphore(value: 0)
+            var failed: [CFError] = []
+            CTFontManagerUnregisterFontDescriptors([descriptor] as CFArray, .persistent) { errors, isDone in
+                failed += errors as? [CFError] ?? []
+                if isDone { done.signal() }
+                return true
+            }
+            if done.wait(timeout: .now() + 3) == .timedOut {
+                Logger.warn("unregistering \(url.lastPathComponent) by descriptor did not finish in time")
+            } else if let first = failed.first {
+                Logger.warn("unregistering \(url.lastPathComponent) by descriptor failed: \(first)")
+            }
+        }
+    }
+
+    private func registeredPhoneWideDescriptors() -> [(descriptor: CTFontDescriptor, url: URL)] {
+        let descriptors = CTFontManagerCopyRegisteredFontDescriptors(.persistent, true) as? [CTFontDescriptor] ?? []
+        let names = Set(Self.allFamilyNames)
+        return descriptors.compactMap { d in
+            guard
+                let name = CTFontDescriptorCopyAttribute(d, kCTFontNameAttribute) as? String, names.contains(name),
+                let url = CTFontDescriptorCopyAttribute(d, kCTFontURLAttribute) as? URL
+            else { return nil }
+            return (d, url)
+        }
     }
 
     /// Register the current set for every app on the phone, replacing an
@@ -586,10 +743,7 @@ public final class QiulingFonts {
         guard let current = currentSet else { return .failure(OWSGenericError("no Qiuling font to install")) }
 
         let wanted = Set(current.urls)
-        let stale = registeredPhoneWide().filter { !wanted.contains($0) }
-        if !stale.isEmpty {
-            CTFontManagerUnregisterFontURLs(stale as CFArray, .persistent) { _, _ in true }
-        }
+        unregisterPhoneWide(registeredPhoneWide().filter { !wanted.contains($0) })
         let result: Result<Void, Error> = await withCheckedContinuation { continuation in
             // The handler runs once per font and once more when done; only the
             // last call may resume, and only once.
@@ -616,20 +770,13 @@ public final class QiulingFonts {
         case .failure(let error):
             Logger.warn("Qiuling phone-wide registration: \(error)")
         }
+        logStatus("phone-wide install")
         NotificationCenter.default.post(name: Self.statusDidChange, object: nil)
         return result
     }
 
     private func registeredPhoneWide() -> [URL] {
-        let descriptors = CTFontManagerCopyRegisteredFontDescriptors(.persistent, true) as? [CTFontDescriptor] ?? []
-        let names = Set(Self.allFamilyNames)
-        return descriptors.compactMap { d -> URL? in
-            guard
-                let name = CTFontDescriptorCopyAttribute(d, kCTFontNameAttribute) as? String, names.contains(name),
-                let url = CTFontDescriptorCopyAttribute(d, kCTFontURLAttribute) as? URL
-            else { return nil }
-            return url
-        }
+        registeredPhoneWideDescriptors().map { $0.url }
     }
 
     /// The bytes of the font in use — the downloaded copy if there is one.
