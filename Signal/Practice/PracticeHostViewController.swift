@@ -212,7 +212,7 @@ enum PracticeOnlyLaunch {
     /// setup) and installs the trainer as the window's root.
     @MainActor
     static func launch(in window: UIWindow) {
-        if let url = Bundle(for: SUIEnvironment.self).url(forResource: QiulingFonts.family, withExtension: "ttf") {
+        for url in QiulingFonts.bundledURLs {
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }
         if #available(iOS 16, *) {

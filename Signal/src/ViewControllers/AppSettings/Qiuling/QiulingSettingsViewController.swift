@@ -74,6 +74,14 @@ class QiulingSettingsViewController: OWSTableViewController2 {
         alphabet.headerTitle = "Alphabet"
         alphabet.add(.label(withText: "Alphabet", accessoryText: status.displayName, accessoryType: .none))
         alphabet.add(.label(withText: "Marks", accessoryText: Self.countFormatter.string(from: NSNumber(value: status.marksCount)) ?? "\(status.marksCount)", accessoryType: .none))
+        // Bold and italic are drawn faces of the font, not the system's fakes,
+        // once the set carries them; a set without them says so.
+        alphabet.add(.label(
+            withText: "Styles",
+            accessoryText: status.facesCount == QiulingFonts.faces.count ? "Regular, bold, italic, bold italic"
+                : status.facesCount == 0 ? "Regular only" : "Regular + \(status.facesCount) of \(QiulingFonts.faces.count) styles",
+            accessoryType: .none,
+        ))
         if let version = status.version {
             alphabet.add(.label(
                 withText: "Version",

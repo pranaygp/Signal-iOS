@@ -21,7 +21,7 @@ build publishes `web/fonts/<family>.ttf` and `web/fonts/manifest.json` into the
 trainer; on launch and when the app becomes active (at most hourly) the app
 reads the manifest, and if the hash for build id `morph` differs from what it
 has, downloads the TTF, verifies it, swaps it in for the running process and
-re-registers it for the whole phone. So: rebuild the font, push `main` (which
+re-registers it for the whole phone, faces included. So: rebuild the font, push `main` (which
 deploys the trainer), open the app — new glyphs. The bundled copy is the
 fallback and what a clean checkout builds with.
 
@@ -32,6 +32,18 @@ bypass token. **The token is never in source**: `Config/qiuling.env`
 `Info.plist`. Rotate it under the Vercel project's Deployment Protection
 settings if a build ever leaks. Without the two settings the app just uses its
 bundled font.
+
+The font is a **set of four files**: the regular and the bold, italic and
+bold-italic faces the qiuling build derives from the same drawings
+(`QiulingMorphWrite-{Bold,Italic,BoldItalic}.ttf`, in `SignalUI/Fonts` and
+`SafariExtension/Resources`). They share one family name, so a bold or italic
+range in a message — Signal sets those with `withSymbolicTraits` — resolves to
+the drawn face rather than CoreText's synthetic one, whose smeared bold closes
+the gaps the drawings keep. The manifest lists the faces under `faces`, and
+`QiulingFonts` takes a set only whole: every face downloaded and verified, or
+the old set stays. The regular's hash names the set; a manifest that gains
+faces for the same regular counts as an update. Settings › Qiuling shows which
+styles the set in use carries.
 
 Phone-wide installation uses Apple's font-provider entitlement
 (`com.apple.developer.user-fonts`): the current copy is registered

@@ -185,6 +185,9 @@
 		07258DB727AE2D2290F61D8B /* background.js in Resources */ = {isa = PBXBuildFile; fileRef = 0382582691AE338307148E98 /* background.js */; };
 		0CE014267EDFBD2538E940A0 /* Pods_Signal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7FF88FB580BC19B240EEB86A /* Pods_Signal.framework */; };
 		0F6B13AD953507050E207349 /* QiulingMorphWrite-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5AB347A997D7470CF4C74126 /* QiulingMorphWrite-Regular.ttf */; };
+		Q1UL1NGSAFB1TA000000B1LD /* QiulingMorphWrite-BoldItalic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = Q1UL1NGSAFB1TA000000F0N7 /* QiulingMorphWrite-BoldItalic.ttf */; };
+		Q1UL1NGSAF1TAL000000B1LD /* QiulingMorphWrite-Italic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = Q1UL1NGSAF1TAL000000F0N7 /* QiulingMorphWrite-Italic.ttf */; };
+		Q1UL1NGSAFB0LD000000B1LD /* QiulingMorphWrite-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = Q1UL1NGSAFB0LD000000F0N7 /* QiulingMorphWrite-Bold.ttf */; };
 		1404D8B3276A353B0068E2F6 /* ChatListViewController+Multiselect.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1404D8B2276A353A0068E2F6 /* ChatListViewController+Multiselect.swift */; };
 		1466AB282817F7E7003B3D9F /* PluralAware.stringsdict in Resources */ = {isa = PBXBuildFile; fileRef = 1466AB262817F7E7003B3D9F /* PluralAware.stringsdict */; };
 		1477630B275E20D700D1067E /* ThreadContextualActionProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1477630A275E20D700D1067E /* ThreadContextualActionProvider.swift */; };
@@ -4150,11 +4153,17 @@
 		FCB11D8C1A129A76002F93FB /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FCB11D8B1A129A76002F93FB /* CoreMedia.framework */; };
 		Q1UL1NG00000000000005B1D /* UIFont+Qiuling.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL1NG00000000000005W1F /* UIFont+Qiuling.swift */; };
 		Q1UL1NG0000000000000B1LD /* QiulingMorphWrite-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = Q1UL1NG0000000000000F0N7 /* QiulingMorphWrite-Regular.ttf */; };
+		Q1UL1NGB1TA000000000B1LD /* QiulingMorphWrite-BoldItalic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = Q1UL1NGB1TA000000000F0N7 /* QiulingMorphWrite-BoldItalic.ttf */; };
+		Q1UL1NG1TAL000000000B1LD /* QiulingMorphWrite-Italic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = Q1UL1NG1TAL000000000F0N7 /* QiulingMorphWrite-Italic.ttf */; };
+		Q1UL1NGB0LD000000000B1LD /* QiulingMorphWrite-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = Q1UL1NGB0LD000000000F0N7 /* QiulingMorphWrite-Bold.ttf */; };
 		Q1UL1NG00000000000BRANDB /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL1NG000000000000BRAND /* Brand.swift */; };
 		Q1UL1NG00000000000F0NTSB /* QiulingFonts.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL1NG000000000000F0NTS /* QiulingFonts.swift */; };
 		Q1UL1NG0000000000KEEPALB /* BackgroundKeepAlive.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL1NG00000000000KEEPAL /* BackgroundKeepAlive.swift */; };
 		Q1UL2F64EF682136D0E39F8C /* PracticeSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1ULDD6C667CD92EC80FDD30 /* PracticeSections.swift */; };
 		Q1UL4587C74600D2C216D4DE /* PracticeEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1ULEE6227C62F9FCE4D8DF5 /* PracticeEngine.swift */; };
+		Q1UL8E2D4B6F1A3C5E7D9B20 /* ReadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL5A21C7E3D9F0B4A6C812 /* ReadView.swift */; };
+		Q1UL7D1E3F5A9B2C4D6E8F42 /* Passages.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL3C9E1F7A2B4D6E8F0A31 /* Passages.swift */; };
+		Q1UL9F3A5C7E1B2D4F6A8C64 /* passages.json in Resources */ = {isa = PBXBuildFile; fileRef = Q1UL6B4D2E8F0A1C3E5D7B53 /* passages.json */; };
 		Q1UL4BE60C42328D3D854A55 /* PracticeHostViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1ULC6A83494FED126454217 /* PracticeHostViewController.swift */; };
 		Q1UL4CF3047944ED02E56885 /* TypeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL6777A5A76F08EF2D89A2 /* TypeView.swift */; };
 		Q1UL7A3E2C91D4F5B6A80C13 /* RecallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q1UL9D1B4E7F2A3C5D6E8F04 /* RecallView.swift */; };
@@ -5385,6 +5394,9 @@
 		55B7535F2D97303A00CCC91C /* RemoteMuteToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteMuteToast.swift; sourceTree = "<group>"; };
 		5AA002E52CA2455F002D1CC2 /* SessionStoreTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStoreTest.swift; sourceTree = "<group>"; };
 		5AB347A997D7470CF4C74126 /* QiulingMorphWrite-Regular.ttf */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file; path = "QiulingMorphWrite-Regular.ttf"; sourceTree = "<group>"; };
+		Q1UL1NGSAFB1TA000000F0N7 /* QiulingMorphWrite-BoldItalic.ttf */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file; path = "QiulingMorphWrite-BoldItalic.ttf"; sourceTree = "<group>"; };
+		Q1UL1NGSAF1TAL000000F0N7 /* QiulingMorphWrite-Italic.ttf */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file; path = "QiulingMorphWrite-Italic.ttf"; sourceTree = "<group>"; };
+		Q1UL1NGSAFB0LD000000F0N7 /* QiulingMorphWrite-Bold.ttf */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file; path = "QiulingMorphWrite-Bold.ttf"; sourceTree = "<group>"; };
 		5C206FC074624B098EAFFB38 /* PrivateComposer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PrivateComposer.swift; sourceTree = "<group>"; };
 		5D6C4583F668E9D733E59B9B /* Pods-SignalServiceKitTests.testable release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SignalServiceKitTests.testable release.xcconfig"; path = "Target Support Files/Pods-SignalServiceKitTests/Pods-SignalServiceKitTests.testable release.xcconfig"; sourceTree = "<group>"; };
 		5F85041386A219C9710EAB41 /* Pods-Signal.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Signal.debug.xcconfig"; path = "Target Support Files/Pods-Signal/Pods-Signal.debug.xcconfig"; sourceTree = "<group>"; };
@@ -8631,6 +8643,9 @@
 		FF39DCC8D1F7DFD3708276E2 /* Pods-SignalTests.app store release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SignalTests.app store release.xcconfig"; path = "Target Support Files/Pods-SignalTests/Pods-SignalTests.app store release.xcconfig"; sourceTree = "<group>"; };
 		Q1UL1NG00000000000005W1F /* UIFont+Qiuling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UIFont+Qiuling.swift"; sourceTree = "<group>"; };
 		Q1UL1NG0000000000000F0N7 /* QiulingMorphWrite-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "QiulingMorphWrite-Regular.ttf"; sourceTree = "<group>"; };
+		Q1UL1NGB1TA000000000F0N7 /* QiulingMorphWrite-BoldItalic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "QiulingMorphWrite-BoldItalic.ttf"; sourceTree = "<group>"; };
+		Q1UL1NG1TAL000000000F0N7 /* QiulingMorphWrite-Italic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "QiulingMorphWrite-Italic.ttf"; sourceTree = "<group>"; };
+		Q1UL1NGB0LD000000000F0N7 /* QiulingMorphWrite-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "QiulingMorphWrite-Bold.ttf"; sourceTree = "<group>"; };
 		Q1UL1NG000000000000BRAND /* Brand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brand.swift; sourceTree = "<group>"; };
 		Q1UL1NG000000000000F0NTS /* QiulingFonts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QiulingFonts.swift; sourceTree = "<group>"; };
 		Q1UL1NG00000000000KEEPAL /* BackgroundKeepAlive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundKeepAlive.swift; sourceTree = "<group>"; };
@@ -8643,6 +8658,9 @@
 		Q1ULDD6C667CD92EC80FDD30 /* PracticeSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeSections.swift; sourceTree = "<group>"; };
 		Q1ULE7DCD9B9359ACF0BC93D /* blocks.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = blocks.json; sourceTree = "<group>"; };
 		Q1ULEE6227C62F9FCE4D8DF5 /* PracticeEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeEngine.swift; sourceTree = "<group>"; };
+		Q1UL5A21C7E3D9F0B4A6C812 /* ReadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadView.swift; sourceTree = "<group>"; };
+		Q1UL3C9E1F7A2B4D6E8F0A31 /* Passages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Passages.swift; sourceTree = "<group>"; };
+		Q1UL6B4D2E8F0A1C3E5D7B53 /* passages.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = passages.json; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -9139,6 +9157,9 @@
 				8852758B27E1B7F4003F2F9B /* Inter-Variable.ttf */,
 				8852758E27E1B9C5003F2F9B /* Parisienne-Regular.ttf */,
 				Q1UL1NG0000000000000F0N7 /* QiulingMorphWrite-Regular.ttf */,
+				Q1UL1NGB1TA000000000F0N7 /* QiulingMorphWrite-BoldItalic.ttf */,
+				Q1UL1NG1TAL000000000F0N7 /* QiulingMorphWrite-Italic.ttf */,
+				Q1UL1NGB0LD000000000F0N7 /* QiulingMorphWrite-Bold.ttf */,
 				B982ACFE2BA8FD2A00AD7E81 /* SignalSymbols-Bold.otf */,
 				B982AD002BA8FD3100AD7E81 /* SignalSymbols-Light.otf */,
 				B96D6D782B9F83270039EB99 /* SignalSymbols-Regular.otf */,
@@ -12017,6 +12038,9 @@
 				34DB3975E443DEC7F9C320C9 /* manifest.json */,
 				0382582691AE338307148E98 /* background.js */,
 				5AB347A997D7470CF4C74126 /* QiulingMorphWrite-Regular.ttf */,
+				Q1UL1NGSAFB1TA000000F0N7 /* QiulingMorphWrite-BoldItalic.ttf */,
+				Q1UL1NGSAF1TAL000000F0N7 /* QiulingMorphWrite-Italic.ttf */,
+				Q1UL1NGSAFB0LD000000F0N7 /* QiulingMorphWrite-Bold.ttf */,
 				704A22D8A38D2E01DCA94462 /* _locales */,
 				17D11DE03F2C24FAA661B3D5 /* images */,
 			);
@@ -16212,6 +16236,7 @@
 			children = (
 				Q1UL79F020040BCD1F8C478C /* corpus.txt */,
 				Q1ULE7DCD9B9359ACF0BC93D /* blocks.json */,
+				Q1UL6B4D2E8F0A1C3E5D7B53 /* passages.json */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -16230,6 +16255,8 @@
 				Q1ULEE6227C62F9FCE4D8DF5 /* PracticeEngine.swift */,
 				Q1UL811FC51717627B26E21A /* PracticeTheme.swift */,
 				Q1UL6777A5A76F08EF2D89A2 /* TypeView.swift */,
+				Q1UL5A21C7E3D9F0B4A6C812 /* ReadView.swift */,
+				Q1UL3C9E1F7A2B4D6E8F0A31 /* Passages.swift */,
 				Q1ULDD6C667CD92EC80FDD30 /* PracticeSections.swift */,
 				Q1UL9D1B4E7F2A3C5D6E8F04 /* RecallView.swift */,
 				Q1ULC6A83494FED126454217 /* PracticeHostViewController.swift */,
@@ -16705,6 +16732,9 @@
 				8852759727E1BA64003F2F9B /* Inter-Variable.ttf in Resources */,
 				8852759627E1BA5B003F2F9B /* Parisienne-Regular.ttf in Resources */,
 				Q1UL1NG0000000000000B1LD /* QiulingMorphWrite-Regular.ttf in Resources */,
+				Q1UL1NGB1TA000000000B1LD /* QiulingMorphWrite-BoldItalic.ttf in Resources */,
+				Q1UL1NG1TAL000000000B1LD /* QiulingMorphWrite-Italic.ttf in Resources */,
+				Q1UL1NGB0LD000000000B1LD /* QiulingMorphWrite-Bold.ttf in Resources */,
 				B982ACFF2BA8FD2A00AD7E81 /* SignalSymbols-Bold.otf in Resources */,
 				B982AD012BA8FD3200AD7E81 /* SignalSymbols-Light.otf in Resources */,
 				B96D6D792B9F83270039EB99 /* SignalSymbols-Regular.otf in Resources */,
@@ -16744,6 +16774,9 @@
 				3FBB54A2DCBA433DB7C21409 /* manifest.json in Resources */,
 				07258DB727AE2D2290F61D8B /* background.js in Resources */,
 				0F6B13AD953507050E207349 /* QiulingMorphWrite-Regular.ttf in Resources */,
+				Q1UL1NGSAFB1TA000000B1LD /* QiulingMorphWrite-BoldItalic.ttf in Resources */,
+				Q1UL1NGSAF1TAL000000B1LD /* QiulingMorphWrite-Italic.ttf in Resources */,
+				Q1UL1NGSAFB0LD000000B1LD /* QiulingMorphWrite-Bold.ttf in Resources */,
 				3D79723EBC3222F970B223C9 /* _locales in Resources */,
 				72480992110BDD6B6C6F3B26 /* images in Resources */,
 			);
@@ -16811,6 +16844,7 @@
 				45B74A7A2044AAB600CD42F8 /* keys.aifc in Resources */,
 				45CB2FA81CB7146C00E1B343 /* Launch Screen.storyboard in Resources */,
 				Q1ULFA681431930F8903B726 /* corpus.txt in Resources */,
+				Q1UL9F3A5C7E1B2D4F6A8C64 /* passages.json in Resources */,
 				Q1ULC1D9CDFB6A7779B41115 /* blocks.json in Resources */,
 				887CD48B24735D4200FDD265 /* launchApp-iPad.json in Resources */,
 				887CD48A24735D4200FDD265 /* launchApp-iPhone.json in Resources */,
@@ -18736,6 +18770,8 @@
 				Q1UL4587C74600D2C216D4DE /* PracticeEngine.swift in Sources */,
 				Q1ULCC7F8186CAA2120DDCA1 /* PracticeTheme.swift in Sources */,
 				Q1UL4CF3047944ED02E56885 /* TypeView.swift in Sources */,
+				Q1UL8E2D4B6F1A3C5E7D9B20 /* ReadView.swift in Sources */,
+				Q1UL7D1E3F5A9B2C4D6E8F42 /* Passages.swift in Sources */,
 				Q1UL2F64EF682136D0E39F8C /* PracticeSections.swift in Sources */,
 				Q1UL7A3E2C91D4F5B6A80C13 /* RecallView.swift in Sources */,
 				Q1UL4BE60C42328D3D854A55 /* PracticeHostViewController.swift in Sources */,

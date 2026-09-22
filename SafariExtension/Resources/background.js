@@ -2,19 +2,21 @@
  * Qiuling script: every text element gets the "Qiuling Reader" family and its
  * font-size/line-height doubled, with undo on the second tap.
  *
- * `QIULING_KEEP`, `qiulingCss` and `qiulingApply` below are the in-page
- * routine from `web/reader.js` in the qiuling repo (the one source for the
- * bookmarklet and the Chrome extension), carried verbatim; the only change is
- * the @font-face format, "truetype", because the phone's font is a TTF.
+ * `QIULING_KEEP`, `QIULING_FACES`, `qiulingCss` and `qiulingApply` below are
+ * the in-page routine from `web/reader.js` in the qiuling repo (the one source
+ * for the bookmarklet and the Chrome extension), carried verbatim; the only
+ * change is the @font-face format, "truetype", because the phone's fonts are
+ * TTFs.
  *
- * The font itself comes from the app: the native handler
- * (SafariWebExtensionHandler.swift) reads the current TTF out of the shared
- * App Group container — or the copy bundled with this extension — and hands
- * it over as base64. It is cached in storage.local keyed by its sha and
- * refreshed on browser start, on install, and on a tap when the cache is more
- * than ten minutes old, so an over-the-air font update reaches Safari without a
- * reinstall. If native messaging fails outright the bundled TTF is used via
- * its extension URL. */
+ * The font is a set of four files — the regular and its bold, italic and
+ * bold-italic faces — and comes from the native handler
+ * (SafariWebExtensionHandler.swift), which keeps its own copy current from
+ * the trainer's manifest, or falls back to the files bundled with this
+ * extension, and hands the set over as base64. It is cached in storage.local
+ * keyed by the regular's sha and refreshed on browser start, on install, and
+ * on a tap when the cache is more than ten minutes old, so an over-the-air
+ * font update reaches Safari without a reinstall. If native messaging fails
+ * outright the bundled TTFs are used via their extension URLs. */
 
 /* Things that must keep their own font: code, form fields, and the usual icon
  * fonts, which draw glyphs from letters and would turn into Qiuling marks. */
@@ -26,22 +28,45 @@ const QIULING_KEEP = ':is(' + [
   '.icon', 'i[class*="icon"]', 'span[class*="icon"]',
 ].join(', ') + ')';
 
+/* The faces of the write font, as `build_font.js` files them: `suffix` on
+ * the trainer's copy (`font-morph-bold.woff2`), `stem` on the font's own
+ * name (`QiulingWrite-Bold.woff2`), and the descriptors a page's `<b>` and
+ * `<i>` select the face by. */
+const QIULING_FACES = {
+  regular: { suffix: '', stem: '', weight: 400, style: 'normal' },
+  bold: { suffix: '-bold', stem: '-Bold', weight: 700, style: 'normal' },
+  italic: { suffix: '-italic', stem: '-Italic', weight: 400, style: 'italic' },
+  bolditalic: { suffix: '-bolditalic', stem: '-BoldItalic', weight: 700, style: 'italic' },
+};
+
 /* No case handling is needed: the font points A-Z at the same glyphs as a-z,
  * so `The` shapes to the `the` block on its own. Nor is any ligature
  * handling: the blocks are `rlig`, which a page's `letter-spacing` or
  * `font-variant-ligatures` cannot switch off. Letter-spacing is still reset
- * because tracked-out marks read badly, not because anything breaks. */
-function qiulingCss(fontUrl) {
+ * because tracked-out marks read badly, not because anything breaks.
+ *
+ * `fonts` is a URL per face (`{regular, bold, italic, bolditalic}`), or one
+ * URL for the regular alone. With all four, `font-synthesis: none` stops the
+ * browser faking a fifth: its synthetic bold smears the outline until gaps
+ * drawn under the rule close, and its oblique leans a word's last glyph into
+ * an upright period. With fewer, synthesis is left on, since a page's
+ * emphasis is worth more than the flaws. */
+function qiulingCss(fonts, format = 'truetype') {
   const keep = QIULING_KEEP;
-  return `
+  if (typeof fonts === 'string') fonts = { regular: fonts };
+  const faces = Object.keys(QIULING_FACES).filter((f) => fonts[f]);
+  const complete = faces.length === Object.keys(QIULING_FACES).length;
+  return faces.map((f) => `
 @font-face {
   font-family: "Qiuling Reader";
-  src: url("${fontUrl}") format("truetype");
+  src: url("${fonts[f]}") format("${format}");
+  font-weight: ${QIULING_FACES[f].weight};
+  font-style: ${QIULING_FACES[f].style};
   font-display: block;
-}
+}`).join('') + `
 html body, html body *:not(${keep}):not(${keep} *) {
   font-family: "Qiuling Reader", system-ui, sans-serif !important;
-  letter-spacing: normal !important;
+  letter-spacing: normal !important;${complete ? '\n  font-synthesis: none !important;' : ''}
 }`;
 }
 
@@ -111,16 +136,21 @@ function qiulingIsOn(id) {
 }
 
 const STYLE_ID = 'qiuling-reader-style';
-const BUNDLED_TTF = 'QiulingMorphWrite-Regular.ttf';
+const BUNDLED_STEM = 'QiulingMorphWrite-Regular';
 const FONT_MAX_AGE_MS = 10 * 60 * 1000;   // matches the native handler's interval
 
-/* --- the font, from the app --------------------------------------------- */
+/* --- the font set, from the app ------------------------------------------ */
 
+/* {sha256, base64, faces: {bold: base64, italic: base64, bolditalic: base64}}
+ * — the faces the native side had; a set may carry fewer than all three. */
 async function askNativeForFont() {
   try {
     const reply = await browser.runtime.sendNativeMessage('application.id', { type: 'font' });
     if (reply && typeof reply.base64 === 'string' && reply.base64 && typeof reply.sha256 === 'string') {
-      return { sha256: reply.sha256, base64: reply.base64 };
+      const faces = {};
+      for (const [face, f] of Object.entries(reply.faces || {}))
+        if (face in QIULING_FACES && f && typeof f.base64 === 'string' && f.base64) faces[face] = f.base64;
+      return { sha256: reply.sha256, base64: reply.base64, faces };
     }
     if (reply && reply.error) console.warn('Qiuling: native handler reported', reply.error);
   } catch (e) {
@@ -129,15 +159,20 @@ async function askNativeForFont() {
   return null;
 }
 
-/* The cache in storage.local: `fontSha` names the current font, `font:<sha>`
- * holds its base64, `fontCheckedAt` is when native was last asked. */
+/* The cache in storage.local: `fontSha` names the current set by its
+ * regular's sha, `font:<sha>` holds the set ({base64, faces}), and
+ * `fontCheckedAt` is when native was last asked. */
 async function currentFontFromCache() {
   const { fontSha, fontCheckedAt } = await browser.storage.local.get(['fontSha', 'fontCheckedAt']);
   if (!fontSha) return null;
   const key = 'font:' + fontSha;
   const got = await browser.storage.local.get(key);
-  if (!got[key]) return null;
-  return { sha256: fontSha, base64: got[key], checkedAt: fontCheckedAt || 0 };
+  const set = got[key];
+  // A cache written before there were faces holds a bare base64 string; it
+  // is a set with none, and the next refresh replaces it.
+  if (!set) return null;
+  if (typeof set === 'string') return { sha256: fontSha, base64: set, faces: {}, checkedAt: 0 };
+  return { sha256: fontSha, base64: set.base64, faces: set.faces || {}, checkedAt: fontCheckedAt || 0 };
 }
 
 async function refreshFont(force) {
@@ -145,14 +180,23 @@ async function refreshFont(force) {
   if (cached && !force && Date.now() - cached.checkedAt < FONT_MAX_AGE_MS) return cached;
   const fresh = await askNativeForFont();
   if (!fresh) return cached;
-  const updates = { fontSha: fresh.sha256, fontCheckedAt: Date.now(), ['font:' + fresh.sha256]: fresh.base64 };
+  const updates = { fontSha: fresh.sha256, fontCheckedAt: Date.now(), ['font:' + fresh.sha256]: { base64: fresh.base64, faces: fresh.faces } };
   await browser.storage.local.set(updates);
   if (cached && cached.sha256 !== fresh.sha256) await browser.storage.local.remove('font:' + cached.sha256);
   return { ...fresh, checkedAt: updates.fontCheckedAt };
 }
 
-function fontUrlFor(font) {
-  return font ? 'data:font/ttf;base64,' + font.base64 : browser.runtime.getURL(BUNDLED_TTF);
+/* A URL per face for `qiulingCss`: the set's data URIs, or, with no set at
+ * all, the bundled files. A set missing a face gets that face synthesised by
+ * Safari rather than a bundled file that may be a different drawing. */
+function fontUrlsFor(font) {
+  const urls = {};
+  for (const [face, { stem }] of Object.entries(QIULING_FACES)) {
+    if (!font) urls[face] = browser.runtime.getURL(BUNDLED_STEM.replace('-Regular', stem || '-Regular') + '.ttf');
+    else if (face === 'regular') urls[face] = 'data:font/ttf;base64,' + font.base64;
+    else if (font.faces && font.faces[face]) urls[face] = 'data:font/ttf;base64,' + font.faces[face];
+  }
+  return urls;
 }
 
 /* --- the tab ------------------------------------------------------------ */
@@ -186,7 +230,7 @@ async function showState(tabId, on) {
 }
 
 async function setTab(tabId, on) {
-  const css = on ? qiulingCss(fontUrlFor(await refreshFont(false))) : '';
+  const css = on ? qiulingCss(fontUrlsFor(await refreshFont(false))) : '';
   try {
     await runInTab(tabId, qiulingApply, [STYLE_ID, css, QIULING_KEEP, QIULING_SCALE, on], true);
   } catch (e) {
