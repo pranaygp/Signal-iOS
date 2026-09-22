@@ -33,10 +33,13 @@ echo "== using $(xcodebuild -version | tr '\n' ' ')"
 # TestFlight needs a build number that only ever goes up; the minute is plenty.
 BUILD=$(date -u +%Y%m%d%H%M)
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" Signal/Signal-Info.plist
-for plist in SignalNSE/Info.plist SignalShareExtension/Info.plist; do
+# Every extension too, or App Store Connect writes to say ITMS-90473: an
+# extension's CFBundleVersion must match its containing app's.
+EXT_PLISTS="SignalNSE/Info.plist SignalShareExtension/Info.plist KeyboardExtension/Info.plist SafariExtension/Info.plist"
+for plist in $EXT_PLISTS; do
   [ -f "$plist" ] && /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$plist" || true
 done
-trap 'git checkout -q -- Signal/Signal-Info.plist SignalNSE/Info.plist SignalShareExtension/Info.plist 2>/dev/null || true' EXIT
+trap 'git checkout -q -- Signal/Signal-Info.plist $EXT_PLISTS 2>/dev/null || true' EXIT
 
 # Signing uses the Apple ID signed into Xcode (Xcode > Settings > Accounts):
 # Xcode's provisioning service rejects App Store Connect API keys here with a
