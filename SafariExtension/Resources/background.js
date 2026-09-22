@@ -80,7 +80,7 @@ function qiulingApply(id, css, keep, scale, on) {
     var e = els[j];
     if (e.closest(keep)) continue;
     var cs = getComputedStyle(e);
-    snap.push([e, parseFloat(cs.fontSize), cs.lineHeight]);
+    snap.push([e, parseFloat(cs.fontSize), cs.lineHeight, cs.textAlign]);
   }
   var log = [];
   for (var k = 0; k < snap.length; k++) {
@@ -90,6 +90,9 @@ function qiulingApply(id, css, keep, scale, on) {
       el.style.setProperty(prop, value, 'important');
     };
     if (snap[k][1] > 0) set('font-size', snap[k][1] * scale + 'px');
+    // Justified text pads the word gaps, and in a script whose word space is a
+    // drawn mark that pads the one thing that must not read as a gap.
+    if (snap[k][3] === 'justify') set('text-align', 'start');
     if (/px$/.test(snap[k][2])) set('line-height', parseFloat(snap[k][2]) * scale + 'px');
     log.push({ el: el, prev: prev });
   }
