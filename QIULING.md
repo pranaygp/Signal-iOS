@@ -21,9 +21,28 @@ build publishes `web/fonts/<family>.ttf` and `web/fonts/manifest.json` into the
 trainer; on launch and when the app becomes active (at most hourly) the app
 reads the manifest, and if the hash for build id `morph` differs from what it
 has, downloads the TTF, verifies it, swaps it in for the running process and
-re-registers it for the whole phone, faces included. So: rebuild the font, push `main` (which
-deploys the trainer), open the app — new glyphs. The bundled copy is the
-fallback and what a clean checkout builds with.
+stores it for the next launch. So: rebuild the font, push `main` (which
+deploys the trainer), open the app, quit it and open it again — new glyphs.
+The bundled copy is the fallback and what a clean checkout builds with.
+
+Two things iOS does not allow, learned the hard way (both looked like
+"the font works in the simulator"):
+
+- **No live swap.** Unregistering the family and registering a new file
+  under the same PostScript name in a running process reports success, but
+  the name then resolves to nothing until the process restarts — the app
+  draws in the system font. Updates are therefore stored and applied at the
+  next launch; Settings › Qiuling says "Update ready — restart Qiuling".
+- **Phone-wide installs only bundle files** (CTFontManagerError 306). The
+  copy other apps see is the one shipped in the build; a downloaded update
+  reaches them with the next TestFlight build. Registering a font for the
+  process when a same-named one is installed phone-wide from another file
+  can also be refused; `QiulingFonts` clears its own conflicting phone-wide
+  registration and retries, then verifies by looking the name up rather
+  than trusting the return code.
+
+Settings › Qiuling shows whether the script is rendering, any registration
+the system refused, and has *Copy diagnostics* for the whole picture.
 
 The trainer is behind Deployment Protection, so the app sends the project's
 bypass token. **The token is never in source**: `Config/qiuling.env`

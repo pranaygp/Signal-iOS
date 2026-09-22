@@ -108,6 +108,11 @@ class QiulingSettingsViewController: OWSTableViewController2 {
         if let latest = status.latestVersion {
             alphabet.add(.label(withText: "Latest available", accessoryText: latest, accessoryType: .none))
         }
+        // A downloaded update waits for the next launch: the font a running
+        // process draws with cannot be swapped on the phone.
+        if let pending = status.pendingVersion {
+            alphabet.add(.label(withText: "Update ready", accessoryText: "\(pending) — restart Qiuling to use it", accessoryType: .none))
+        }
         // A registration the system refused is the one failure the screen
         // would otherwise hide behind a fallback: say what it was.
         if let problem = status.problem {
@@ -160,7 +165,7 @@ class QiulingSettingsViewController: OWSTableViewController2 {
                 self?.installPhoneWide()
             })
         }
-        otherApps.footerTitle = "Safari and other apps use a copy of the font installed on your iPhone. iOS asks for permission the first time. You can remove it later in Settings, under General, then Fonts."
+        otherApps.footerTitle = "Safari and other apps use the copy of the font included with this version of Qiuling, installed on your iPhone — iOS only allows an app to install fonts from its own bundle, so downloaded updates reach other apps with the next app update. iOS asks for permission the first time. You can remove it later in Settings, under General, then Fonts."
         contents.add(otherApps)
 
         let keyboard = OWSTableSection()
@@ -242,7 +247,9 @@ class QiulingSettingsViewController: OWSTableViewController2 {
                 let which = status.version.map { " (\($0))" } ?? ""
                 sentence = "Last checked \(relativeDescription(of: lastCheck.date)). You have the latest alphabet\(which)."
             case .updated:
-                sentence = "Updated to the latest alphabet just now."
+                sentence = status.pendingVersion != nil
+                    ? "Downloaded the latest alphabet \(relativeDescription(of: lastCheck.date)). Quit and reopen Qiuling to start using it."
+                    : "Downloaded the latest alphabet \(relativeDescription(of: lastCheck.date))."
             case .failed(let message):
                 sentence = "The last check, \(relativeDescription(of: lastCheck.date)), failed: \(message)"
             }
