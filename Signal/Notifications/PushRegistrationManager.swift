@@ -6,6 +6,7 @@
 import Foundation
 public import PushKit
 public import SignalServiceKit
+import UserNotifications
 import UIKit
 
 public enum PushRegistrationError: Error {
@@ -143,14 +144,20 @@ public class PushRegistrationManager: NSObject, PKPushRegistryDelegate {
             return
         }
 
-        // NSCocoaErrorDomain 3000 is iOS saying the binary carries no
-        // aps-environment entitlement — this build, by construction. Report
-        // it as "push not supported" so registration and linking take the
-        // manual-message-fetch path instead of surfacing an unknown error.
+        // This build carries no aps-environment entitlement, by construction,
+        // and the system says so in a different voice per platform: iOS with
+        // NSCocoaErrorDomain 3000, macOS (the iPad build run on a Mac) with
+        // UNErrorDomain 1, "Notifications are not allowed for this
+        // application". Either is "push not supported", so registration and
+        // linking take the manual-message-fetch path instead of surfacing an
+        // unknown error — which is how linking on the Mac used to fail right
+        // after the QR scan.
         let nsError = error as NSError
-        if nsError.domain == NSCocoaErrorDomain, nsError.code == 3000 {
+        let noEntitlement = (nsError.domain == NSCocoaErrorDomain && nsError.code == 3000)
+            || (nsError.domain == UNErrorDomain && nsError.code == UNError.notificationsNotAllowed.rawValue)
+        if noEntitlement {
             Self.pushEntitlementKnownMissing = true
-            vanillaTokenFuture.reject(PushRegistrationError.pushNotSupported(description: "no aps-environment entitlement"))
+            vanillaTokenFuture.reject(PushRegistrationError.pushNotSupported(description: "no aps-environment entitlement (\(nsError.domain) \(nsError.code))"))
             return
         }
         vanillaTokenFuture.reject(error)
