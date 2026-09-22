@@ -169,6 +169,10 @@ struct ProgressTabView: View {
                     } else {
                         reading(readings)
                     }
+                    if !readings.isEmpty || !sessions.isEmpty {
+                        curve(readings: readings, typed: sessions)
+                        breaks(readings: readings, typed: sessions)
+                    }
                     if !sessions.isEmpty {
                         typing(sessions)
                         recent(sessions)
@@ -298,6 +302,188 @@ struct ProgressTabView: View {
         statTile("\(store.bestReading) wpm", "Best", spoken: "Best, \(store.bestReading) words per minute")
         statTile(goal.percent.map { "\($0)%" } ?? "—", "Of your English, aloud",
                  spoken: goal.percent.map { "\($0) percent of your English speed, aloud" } ?? "No English baseline yet")
+    }
+
+    // MARK: Learning curve
+
+    /// Which runs the curve and the break table are drawn from. Reading aloud
+    /// is the eyes' speed and the phone's first mode, so it is the default when
+    /// there are readings; typed speed is a different scale and gets its own fit.
+    private enum CurveSource: String, CaseIterable, Identifiable {
+        case reading, typing
+        var id: String { rawValue }
+        var label: String { self == .reading ? "Reading aloud" : "Typing" }
+    }
+    @State private var curveSource: CurveSource?
+
+    /// The tests alone when there are enough to fit, since practice runs mix
+    /// passage lengths and scatter the cloud; otherwise every run in the script.
+    private func curveRuns(_ source: CurveSource, readings: [PracticeStore.Session], typed: [PracticeStore.Session]) -> [PracticeStore.Session] {
+        switch source {
+        case .reading:
+            let tests = readings.filter { $0.mode == "read-test" }
+            return tests.count >= 3 ? tests : readings
+        case .typing:
+            return typed
+        }
+    }
+
+    /// Every run at its cumulative minutes of exposure, both axes logarithmic,
+    /// the power-law fit through them, and the English speed as the line to
+    /// reach. Kolers' result is that this is straight; the section shows
+    /// whether yours is and where it meets English.
+    private func curve(readings: [PracticeStore.Session], typed: [PracticeStore.Session]) -> some View {
+        let source = curveSource ?? (readings.isEmpty ? .typing : .reading)
+        let runs = curveRuns(source, readings: readings, typed: typed)
+        let fit = LearningCurve.powerLaw(runs)
+        let english: Int? = source == .reading ? store.readingGoal.english : nil
+        return SignalSection {
+            if !readings.isEmpty, !typed.isEmpty {
+                Picker("Runs", selection: Binding(get: { source }, set: { curveSource = $0 })) {
+                    ForEach(CurveSource.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 4, trailing: 16))
+            }
+            HStack(alignment: .top, spacing: 12) {
+                statTile(store.exposureText, "Of exposure, all modes", spoken: "\(store.exposureText) of exposure in the script")
+                if let f = fit {
+                    statTile(String(format: "%.2f", f.k), "Learning exponent", spoken: String(format: "Learning exponent %.2f", f.k))
+                    statTile(String(format: "%.2f", f.r2), "r², how straight", spoken: String(format: "r squared %.2f", f.r2))
+                }
+            }
+            .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
+
+            if let f = fit {
+                curveChart(f, english: english)
+                    .frame(height: 180)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 16, trailing: 16))
+                    .accessibilityLabel(curveVerdict(f, english: english))
+            }
+        } header: {
+            Text("Learning curve")
+        } footer: {
+            Text(fit.map { curveVerdict($0, english: english) }
+                 ?? "After three runs a line is fitted through your speed against cumulative practice, both on log scales. Kolers (1975) found that line is straight for a new typography, and that readers neared normal speed inside about 160 pages.")
+        }
+    }
+
+    private func curveChart(_ f: LearningCurve.Fit, english: Int?) -> some View {
+        let xs = f.points.map(\.minutes), ys = f.points.map { Double($0.wpm) }
+        let xLo = xs.min()! / 1.15, xHi = xs.max()! * 1.15
+        let reach = english.flatMap { f.minutesTo($0) }
+        // The fit runs to the edge of the data; beyond it a dashed forecast
+        // to where it meets English, when that is within sight.
+        let showReach = reach.map { $0 > xs.max()! && $0 <= xs.max()! * 8 } ?? false
+        let xTop = showReach ? reach! * 1.15 : xHi
+        let yLo = ys.min()! / 1.2, yHi = max(ys.max()!, Double(english ?? 0)) * 1.2
+        let samples = stride(from: log(xs.min()!), through: log(showReach ? reach! : xs.max()!), by: (log(showReach ? reach! : xs.max()!) - log(xs.min()!)) / 24)
+            .map { exp($0) }
+        // Minutes below the hour, whole hours above it, so the labels read as
+        // "20m … 2h … 10h" rather than as fractions of an hour.
+        let xTicks = ([1.0, 2, 5, 10, 20, 30] + [1.0, 2, 5, 10, 20, 50, 100, 200].map { $0 * 60 }).filter { $0 >= xLo && $0 <= xTop }
+        return Chart {
+            ForEach(f.points) { p in
+                PointMark(x: .value("Minutes", p.minutes), y: .value("Words per minute", p.wpm))
+                    .foregroundStyle(Color.Signal.tertiaryLabel)
+                    .symbolSize(28)
+            }
+            ForEach(Array(samples.enumerated()), id: \.offset) { _, m in
+                LineMark(x: .value("Minutes", m), y: .value("Fit", f.predict(m)), series: .value("Line", m <= xs.max()! * 1.0001 ? "fit" : "forecast"))
+                    .foregroundStyle(Color.Signal.label)
+                    .lineStyle(StrokeStyle(lineWidth: 2, dash: m <= xs.max()! * 1.0001 ? [] : [4, 4]))
+            }
+            if let e = english {
+                RuleMark(y: .value("English", e))
+                    .foregroundStyle(Color.Signal.secondaryLabel)
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    .annotation(position: .top, alignment: .trailing) {
+                        Text("English \(e)").font(.caption2).foregroundStyle(.secondary)
+                    }
+            }
+        }
+        .chartXScale(domain: xLo...xTop, type: .log)
+        .chartYScale(domain: yLo...yHi, type: .log)
+        .chartXAxis {
+            AxisMarks(values: xTicks) { v in
+                AxisGridLine().foregroundStyle(Color.Signal.quaternaryFill)
+                AxisValueLabel {
+                    if let m = v.as(Double.self) {
+                        Text(m < 60 ? "\(Int(m))m" : "\(Int((m / 60).rounded()))h").font(.caption2.monospacedDigit()).foregroundStyle(Color.Signal.secondaryLabel)
+                    }
+                }
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading, values: [5, 10, 15, 20, 30, 50, 70, 100, 150, 200, 300, 500].filter { Double($0) > yLo && Double($0) < yHi }) {
+                AxisGridLine().foregroundStyle(Color.Signal.quaternaryFill)
+                AxisValueLabel().font(.caption2.monospacedDigit()).foregroundStyle(Color.Signal.secondaryLabel)
+            }
+        }
+        .chartLegend(.hidden)
+    }
+
+    private func curveVerdict(_ f: LearningCurve.Fit, english: Int?) -> String {
+        let total = LearningCurve.minutes(f.points.map(\.minutes).max()!)
+        let tenfold = Int(((pow(10, f.k) - 1) * 100).rounded())
+        let loose = f.r2 < 0.3 ? "The points barely fit a line yet (r² under 0.3), so read this loosely. " : ""
+        if f.k <= 0.01 {
+            return loose + "The line is flat: over \(total) of exposure these runs are not getting faster. Change what you practise before adding more of it."
+        }
+        guard let e = english else {
+            return loose + String(format: "Speed is rising as the %.2f power of practice — tenfold the practice, %d%% more speed. Take the English test and this will say when the line meets it.", f.k, tenfold)
+        }
+        guard let reach = f.minutesTo(e), reach > f.points.map(\.minutes).max()! else {
+            return loose + "The fitted line is already at or past your English speed of \(e) wpm."
+        }
+        return loose + String(format: "Speed is rising as the %.2f power of practice: tenfold the practice, %d%% more speed. Extended, the line meets your English speed of %d wpm at about %@ of exposure — %@ from here. Kolers' students, reading upside-down text, neared normal speed within about 160 pages.",
+                              f.k, tenfold, e, LearningCurve.minutes(reach), LearningCurve.minutes(reach - f.points.map(\.minutes).max()!))
+    }
+
+    // MARK: Breaks
+
+    /// What each break of two days or more cost: the first run back and the
+    /// three after it, against the three before.
+    private func breaks(readings: [PracticeStore.Session], typed: [PracticeStore.Session]) -> some View {
+        let source = curveSource ?? (readings.isEmpty ? .typing : .reading)
+        let runs = curveRuns(source, readings: readings, typed: typed)
+        let rows = LearningCurve.breaks(runs)
+        let since = runs.last.map { Int(Date().timeIntervalSince($0.date) / 86400) } ?? 0
+        return SignalSection {
+            if rows.isEmpty {
+                Text(since >= 2
+                     ? "No break of two days or more yet — the current one is \(since) days, so your next run is the first row here."
+                     : "No break of two days or more yet.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            } else {
+                ForEach(rows.suffix(8).reversed()) { b in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(b.date, format: .dateTime.month(.abbreviated).day()).font(.body)
+                            Text("\(b.days) days away · \(b.before) wpm before").font(.footnote).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("\(b.first) wpm back").font(.body.monospacedDigit())
+                            Text("\(b.firstPercent)% · then \(b.afterPercent)%").font(.footnote.monospacedDigit())
+                                .foregroundStyle(b.firstPercent >= 100 ? PracticeTheme.good : b.firstPercent >= 90 ? Color.secondary : PracticeTheme.wrong)
+                        }
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Back after \(b.days) days at \(b.first) words per minute, \(b.firstPercent) percent of the \(b.before) before; the next three \(b.afterPercent) percent")
+                }
+            }
+        } header: {
+            Text("After a break")
+        } footer: {
+            if rows.isEmpty {
+                Text("Kolers' readers kept their skill across a year away; Potter could not read her own cipher after decades. Every gap of two days or more will show here as the first run back against the three before it.")
+            } else {
+                let avg = rows.map(\.firstPercent).reduce(0, +) / rows.count
+                let longest = rows.max { $0.days < $1.days }!
+                Text("Over \(rows.count) break\(rows.count == 1 ? "" : "s") of two days or more, the first run back averaged \(avg)% of the speed before it; the longest, \(longest.days) days, came back at \(longest.firstPercent)%. Near 100% on the first run means the marks are in long-term memory, not this week's warm-up." + (since >= 2 ? " You are \(since) days into a break now." : ""))
+            }
+        }
     }
 
     // MARK: Typing

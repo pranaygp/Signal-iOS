@@ -447,8 +447,24 @@ final class PracticeStore: ObservableObject {
         /// A reading's passage length. Files from before there were readings
         /// have no such key, and decode it as nil.
         var words: Int? = nil
+        /// Cumulative exposure to the script as it stood when this session
+        /// ended, in seconds and in marks read; the x of the learning curve.
+        /// Sessions from before the field are restamped on load.
+        var cumSecs: Int? = nil
+        var cumMarks: Int? = nil
 
         var isReading: Bool { mode.hasPrefix("read") }
+        /// Everything in the script counts; the English baselines are the
+        /// mouth's or the fingers' speed and count for nothing here.
+        var isExposure: Bool { !mode.hasSuffix("english") }
+    }
+    /// The running total of practice. Kept beside the session list because
+    /// that list is trimmed, and a learning curve against cumulative practice
+    /// has to keep counting past the trim.
+    struct Exposure: Codable {
+        var runs = 0
+        var secs = 0
+        var marks = 0
     }
     struct MarkRecord: Codable {
         var seen = 0
@@ -484,15 +500,44 @@ final class PracticeStore: ObservableObject {
         var sessions: [Session] = []
         var marks: [String: MarkRecord] = [:]
         var recall: [String: RecallItem] = [:]
+        var total = Exposure()
 
         init() {}
 
-        // Files written before the drill existed have no `recall` key.
+        // Files written before the drill existed have no `recall` key, and
+        // those from before the learning curve have no `total`.
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             sessions = try c.decodeIfPresent([Session].self, forKey: .sessions) ?? []
             marks = try c.decodeIfPresent([String: MarkRecord].self, forKey: .marks) ?? [:]
             recall = try c.decodeIfPresent([String: RecallItem].self, forKey: .recall) ?? [:]
+            if let t = try c.decodeIfPresent(Exposure.self, forKey: .total), sessions.allSatisfy({ $0.cumSecs != nil }) {
+                total = t
+            } else {
+                restamp()
+            }
+        }
+
+        /// Rebuild the total from the sessions and stamp each with it — exact
+        /// for a book that has never been trimmed, which is every book so far.
+        mutating func restamp() {
+            var t = Exposure()
+            for i in sessions.indices {
+                if sessions[i].isExposure {
+                    t.runs += 1; t.secs += sessions[i].seconds; t.marks += sessions[i].words ?? sessions[i].chars
+                }
+                sessions[i].cumSecs = t.secs; sessions[i].cumMarks = t.marks
+            }
+            total = t
+        }
+
+        /// Fold one session in: the total first, then the row stamped with it.
+        mutating func append(_ s: Session, marks: Int) {
+            var s = s
+            if s.isExposure { total.runs += 1; total.secs += s.seconds; total.marks += marks }
+            s.cumSecs = total.secs; s.cumMarks = total.marks
+            sessions.append(s)
+            if sessions.count > 2000 { sessions.removeFirst(sessions.count - 2000) }
         }
     }
 
@@ -516,8 +561,7 @@ final class PracticeStore: ObservableObject {
     func record(race: Race, mode: String) {
         let s = race.stats()
         guard s.seconds >= 5 else { return }
-        book.sessions.append(Session(date: Date(), seconds: Int(race.seconds), mode: mode, wpm: s.wpm, accuracy: s.accuracy, chars: s.chars, misread: s.misread))
-        if book.sessions.count > 2000 { book.sessions.removeFirst(book.sessions.count - 2000) }
+        book.append(Session(date: Date(), seconds: Int(race.seconds), mode: mode, wpm: s.wpm, accuracy: s.accuracy, chars: s.chars, misread: s.misread), marks: s.blocks)
         for m in race.marks where m.complete {
             var r = book.marks[m.text] ?? MarkRecord()
             r.seen += 1
@@ -556,13 +600,15 @@ final class PracticeStore: ObservableObject {
     /// One reading, saved unless it was too short to mean anything.
     func record(reading r: ReadResult, mode: String) {
         guard r.seconds >= 3 else { return }
-        book.sessions.append(Session(
+        book.append(Session(
             date: Date(), seconds: Int(r.seconds.rounded()), mode: mode, wpm: r.wpm,
             accuracy: r.accuracy, chars: 0, misread: r.errors, words: r.words,
-        ))
-        if book.sessions.count > 2000 { book.sessions.removeFirst(book.sessions.count - 2000) }
+        ), marks: r.words)
         save()
     }
+
+    /// Practice so far, in the script, all modes: "48 min" or "2.7 h".
+    var exposureText: String { LearningCurve.minutes(Double(book.total.secs) / 60) }
 
     var typedSessions: [Session] { book.sessions.filter { !$0.isReading } }
     var readSessions: [Session] { book.sessions.filter { $0.isReading && $0.mode != "read-english" } }
@@ -591,5 +637,100 @@ final class PracticeStore: ObservableObject {
         book.marks.filter { $0.value.seen >= min && $0.value.wrong > 0 }
             .sorted { Double($0.value.wrong) / Double($0.value.seen) > Double($1.value.wrong) / Double($1.value.seen) }
             .map { ($0.key, $0.value) }
+    }
+}
+
+// MARK: - The learning curve
+
+/// Kolers (1975) had students read up to 160 pages of inverted text: the log
+/// of their reading time fell in a straight line against the log of pages
+/// read — a power law — and they neared normal speed inside those pages.
+/// Kolers (1976) brought them back after a year and the skill had kept. So
+/// the two questions to keep asking are: is my curve straight on log axes,
+/// and what does a break cost? The web trainer's `stats.js` asks the same
+/// two, the same way, so the phone's numbers match the browser's.
+enum LearningCurve {
+    struct Point: Identifiable {
+        let id: UUID
+        let minutes: Double
+        let wpm: Int
+        let date: Date
+    }
+    struct Fit {
+        let points: [Point]
+        /// The exponent: at 0.3, ten times the practice buys about double the speed.
+        let k: Double
+        let a: Double
+        let r2: Double
+        func predict(_ minutes: Double) -> Double { exp(a + k * log(minutes)) }
+        /// Minutes of exposure at which the line reaches `wpm`; nil when it is
+        /// flat or falling, since then it never does.
+        func minutesTo(_ wpm: Int) -> Double? {
+            guard k > 0.01, wpm > 0 else { return nil }
+            return exp((log(Double(wpm)) - a) / k)
+        }
+    }
+
+    static func points(_ sessions: [PracticeStore.Session]) -> [Point] {
+        sessions.compactMap { s in
+            guard let c = s.cumSecs, c > 0, s.wpm > 0 else { return nil }
+            return Point(id: s.id, minutes: Double(c) / 60, wpm: s.wpm, date: s.date)
+        }
+    }
+
+    /// Least squares of log(wpm) on log(minutes). Three runs and some spread
+    /// in x, or nothing: two runs a minute apart fit any line at all.
+    static func powerLaw(_ sessions: [PracticeStore.Session]) -> Fit? {
+        let pts = points(sessions)
+        guard pts.count >= 3 else { return nil }
+        let lx = pts.map { log($0.minutes) }, ly = pts.map { log(Double($0.wpm)) }
+        let n = Double(pts.count)
+        let mx = lx.reduce(0, +) / n, my = ly.reduce(0, +) / n
+        var sxy = 0.0, sxx = 0.0, syy = 0.0
+        for i in pts.indices {
+            sxy += (lx[i] - mx) * (ly[i] - my); sxx += (lx[i] - mx) * (lx[i] - mx); syy += (ly[i] - my) * (ly[i] - my)
+        }
+        guard sxx > 1e-6 else { return nil }
+        let k = sxy / sxx
+        return Fit(points: pts, k: k, a: my - k * mx, r2: syy > 0 ? sxy * sxy / (sxx * syy) : 0)
+    }
+
+    struct Break: Identifiable {
+        var id: Date { date }
+        let date: Date
+        let days: Int
+        /// Mean speed of the three runs before the gap, the first run back,
+        /// and the mean of the three after it.
+        let before: Int
+        let first: Int
+        let after: Int
+        var firstPercent: Int { before > 0 ? Int((Double(first) / Double(before) * 100).rounded()) : 0 }
+        var afterPercent: Int { before > 0 ? Int((Double(after) / Double(before) * 100).rounded()) : 0 }
+    }
+
+    /// Every gap of `minDays` or more between consecutive sessions, and what
+    /// came back across it. Potter lost her cipher over decades away; Kolers'
+    /// readers kept theirs across a year. Where you sit shows up as `first`
+    /// against `before`, break by break.
+    static func breaks(_ sessions: [PracticeStore.Session], minDays: Int = 2) -> [Break] {
+        var out: [Break] = []
+        func mean(_ s: ArraySlice<PracticeStore.Session>) -> Int {
+            s.isEmpty ? 0 : Int((Double(s.map(\.wpm).reduce(0, +)) / Double(s.count)).rounded())
+        }
+        for i in 1..<max(1, sessions.count) {
+            let days = sessions[i].date.timeIntervalSince(sessions[i - 1].date) / 86400
+            guard days >= Double(minDays) else { continue }
+            out.append(Break(
+                date: sessions[i].date, days: Int(days.rounded()),
+                before: mean(sessions[max(0, i - 3)..<i]), first: sessions[i].wpm,
+                after: mean(sessions[i..<min(sessions.count, i + 3)])
+            ))
+        }
+        return out
+    }
+
+    /// "48 min" under an hour and a half, "2.7 h" past it.
+    static func minutes(_ m: Double) -> String {
+        m < 90 ? "\(Int(m.rounded())) min" : String(format: "%.1f h", m / 60)
     }
 }

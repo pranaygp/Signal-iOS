@@ -94,12 +94,12 @@
 	<string>Signal needs access to your location in order to share your current location.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Signal needs access to your microphone to make and receive phone calls and record voice messages.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Qiuling scores what you read aloud against the passage. Speech is recognised on the device when it can be.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Signal will save photos to your library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Signal will let you choose which photos from your library to send.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Qiuling scores what you read aloud against the passage. Speech is recognised on the device when it can be.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>INSendMessageIntent</string>
