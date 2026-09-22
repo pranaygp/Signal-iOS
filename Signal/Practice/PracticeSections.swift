@@ -152,20 +152,24 @@ struct ProgressTabView: View {
     private struct Mark: Identifiable { let text: String; var id: String { text } }
 
     var body: some View {
-        let sessions = store.book.sessions
+        let sessions = store.typedSessions
+        let readings = store.readSessions
         let hasRecall = !store.book.recall.isEmpty
         Group {
-            if sessions.isEmpty, !hasRecall {
+            if sessions.isEmpty, readings.isEmpty, !hasRecall {
                 empty.transition(.opacity)
             } else {
                 SignalList {
-                    if sessions.isEmpty {
+                    if readings.isEmpty {
                         SignalSection {
                             EmptyView()
                         } footer: {
-                            Text("No races yet. Finish a race and your speed shows up here.")
+                            Text("No readings yet. Read a passage aloud and your speed shows up here.")
                         }
                     } else {
+                        reading(readings)
+                    }
+                    if !sessions.isEmpty {
                         typing(sessions)
                         recent(sessions)
                         misread
@@ -189,7 +193,7 @@ struct ProgressTabView: View {
                 .transition(.opacity)
             }
         }
-        .animation(.default, value: sessions.isEmpty && !hasRecall)
+        .animation(.default, value: sessions.isEmpty && readings.isEmpty && !hasRecall)
         .background(Color.Signal.groupedBackground)
         .sheet(item: Binding(get: { detail.map(Mark.init) }, set: { detail = $0?.text })) { m in
             RecallMarkDetail(mark: m.text, item: store.book.recall[m.text])
@@ -202,23 +206,98 @@ struct ProgressTabView: View {
     private var empty: some View {
         VStack(spacing: 20) {
             if #available(iOS 17, *) {
-                ContentUnavailableView("No progress yet", systemImage: "chart.line.uptrend.xyaxis", description: Text("Finish a race or answer a few recall cards and your numbers show up here."))
+                ContentUnavailableView("No progress yet", systemImage: "chart.line.uptrend.xyaxis", description: Text("Read a passage, finish a race or answer a few recall cards and your numbers show up here."))
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "chart.line.uptrend.xyaxis").font(.largeTitle).foregroundStyle(.secondary)
                     Text("No progress yet").font(.title3.weight(.semibold))
-                    Text("Finish a race or answer a few recall cards and your numbers show up here.").font(.body).foregroundStyle(.secondary)
+                    Text("Read a passage, finish a race or answer a few recall cards and your numbers show up here.").font(.body).foregroundStyle(.secondary)
                 }
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
             }
             HStack(spacing: 12) {
-                Button("Race") { race() }.practicePrimaryButton()
+                Button("Read") { race() }.practicePrimaryButton()
                 Button("Recall") { recall() }.practiceSecondaryButton()
             }
             .controlSize(.large)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: Reading
+
+    /// Reading aloud: the last and best, the spoken share of English when both
+    /// tests have been taken, and the readings themselves.
+    private func reading(_ readings: [PracticeStore.Session]) -> some View {
+        let goal = store.readingGoal
+        let recent = Array(readings.suffix(60))
+        return SignalSection {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 12) { readingTiles(last: readings.last!.wpm, goal: goal) }
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) { readingTiles(last: readings.last!.wpm, goal: goal) }
+            }
+            .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
+
+            if recent.count >= 2 {
+                Chart {
+                    ForEach(Array(recent.enumerated()), id: \.element.id) { i, s in
+                        PointMark(x: .value("Reading", i), y: .value("Words per minute", s.wpm))
+                            .foregroundStyle(s.mode == "read-test" ? PracticeTheme.accent : Color.Signal.tertiaryLabel)
+                            .symbolSize(28)
+                        if recent.count >= 3 {
+                            LineMark(x: .value("Reading", i), y: .value("Words per minute", trend(recent, at: i)))
+                                .foregroundStyle(Color.Signal.label)
+                                .lineStyle(StrokeStyle(lineWidth: 2))
+                                .interpolationMethod(.monotone)
+                        }
+                    }
+                    if let e = goal.english {
+                        RuleMark(y: .value("English", e))
+                            .foregroundStyle(Color.Signal.secondaryLabel)
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                            .annotation(position: .top, alignment: .trailing) {
+                                Text("English, aloud").font(.caption2).foregroundStyle(.secondary)
+                            }
+                    }
+                }
+                .chartXAxis(.hidden)
+                .chartYAxis {
+                    AxisMarks(position: .leading) {
+                        AxisGridLine().foregroundStyle(Color.Signal.quaternaryFill)
+                        AxisValueLabel().font(.caption2.monospacedDigit()).foregroundStyle(Color.Signal.secondaryLabel)
+                    }
+                }
+                .frame(height: 160)
+                .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
+                .accessibilityLabel("Words per minute across your last \(recent.count) readings, best \(store.bestReading)")
+            }
+
+            ForEach(readings.suffix(5).reversed()) { s in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(s.date, format: .dateTime.month(.abbreviated).day().hour().minute()).font(.body)
+                        Text("\(s.mode == "read-test" ? "Test" : "Sentences") · \(s.words ?? 0) words · \(s.seconds) s").font(.footnote).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text("\(s.wpm) wpm").font(.body.monospacedDigit())
+                }
+            }
+        } header: {
+            Text("Reading aloud")
+        } footer: {
+            Text(goal.percent != nil
+                 ? "Red dots are tests; the dashed line is your English test speed, the line to reach. The share is your last three Qiuling tests against your last three English ones."
+                 : "Red dots are tests. Take the test in Qiuling and in English and the share of your English speed appears here — the number that matters.")
+        }
+    }
+
+    @ViewBuilder
+    private func readingTiles(last: Int, goal: PracticeStore.ReadingGoal) -> some View {
+        statTile("\(last) wpm", "Last reading", spoken: "Last reading, \(last) words per minute")
+        statTile("\(store.bestReading) wpm", "Best", spoken: "Best, \(store.bestReading) words per minute")
+        statTile(goal.percent.map { "\($0)%" } ?? "—", "Of your English, aloud",
+                 spoken: goal.percent.map { "\($0) percent of your English speed, aloud" } ?? "No English baseline yet")
     }
 
     // MARK: Typing

@@ -11,14 +11,16 @@ import UIKit
 
 /// The Practice tab. Built like the other home tabs: the system navigation
 /// bar carries the title, the avatar/settings button and the actions, and
-/// the sections are pushed through Signal's navigation controller. The type
-/// race is the tab's content.
+/// the sections are pushed through Signal's navigation controller. Reading
+/// aloud is the tab's content — the measure closest to the eyes — and the
+/// typed race is a section behind the keyboard icon.
 @available(iOS 16, *)
-final class PracticeHostViewController: UIHostingController<TypeView>, HomeTabViewController {
+final class PracticeHostViewController: UIHostingController<ReadView>, HomeTabViewController {
+    private let reading = ReadModel()
     private let race = RaceModel()
 
     init() {
-        super.init(rootView: TypeView(model: race))
+        super.init(rootView: ReadView(model: reading))
         title = "Practice"
     }
 
@@ -65,7 +67,17 @@ final class PracticeHostViewController: UIHostingController<TypeView>, HomeTabVi
             self?.pushRecall()
         })
         recall.accessibilityLabel = "Recall"
-        navigationItem.rightBarButtonItems = [moreItem, progress, recall]
+        let type = UIBarButtonItem(image: UIImage(systemName: "keyboard"), primaryAction: UIAction { [weak self] _ in
+            self?.pushType()
+        })
+        type.accessibilityLabel = "Type"
+        navigationItem.rightBarButtonItems = [moreItem, progress, recall, type]
+    }
+
+    private func pushType() {
+        let controller = PracticeSectionViewController(rootView: AnyView(TypeView(model: race)))
+        controller.title = "Type"
+        navigationController?.pushViewController(controller, animated: true)
     }
 
     private func push(_ view: some View, title: String) {

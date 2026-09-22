@@ -435,12 +435,20 @@ final class PracticeStore: ObservableObject {
     struct Session: Codable, Identifiable {
         var id = UUID()
         let date: Date
+        /// The clock set for a typed race; the time taken for a reading.
         let seconds: Int
+        /// sentences | words for the typed race; read | read-test | read-english
+        /// for reading aloud. Typed and spoken speeds never share a chart.
         let mode: String
         let wpm: Int
         let accuracy: Int
         let chars: Int
         let misread: Int
+        /// A reading's passage length. Files from before there were readings
+        /// have no such key, and decode it as nil.
+        var words: Int? = nil
+
+        var isReading: Bool { mode.hasPrefix("read") }
     }
     struct MarkRecord: Codable {
         var seen = 0
@@ -545,7 +553,38 @@ final class PracticeStore: ObservableObject {
         save()
     }
 
-    var best: Int { book.sessions.map(\.wpm).max() ?? 0 }
+    /// One reading, saved unless it was too short to mean anything.
+    func record(reading r: ReadResult, mode: String) {
+        guard r.seconds >= 3 else { return }
+        book.sessions.append(Session(
+            date: Date(), seconds: Int(r.seconds.rounded()), mode: mode, wpm: r.wpm,
+            accuracy: r.accuracy, chars: 0, misread: r.errors, words: r.words,
+        ))
+        if book.sessions.count > 2000 { book.sessions.removeFirst(book.sessions.count - 2000) }
+        save()
+    }
+
+    var typedSessions: [Session] { book.sessions.filter { !$0.isReading } }
+    var readSessions: [Session] { book.sessions.filter { $0.isReading && $0.mode != "read-english" } }
+
+    /// The typed race's best, as before.
+    var best: Int { typedSessions.map(\.wpm).max() ?? 0 }
+    var bestReading: Int { readSessions.map(\.wpm).max() ?? 0 }
+
+    /// The goal, aloud: the Qiuling test against the English test on the same
+    /// kind of passage, each the mean of its last three. The mouth is in both,
+    /// so what is left is the script; 100 is the daily-driver line.
+    struct ReadingGoal { let qiuling: Int?; let english: Int?; var percent: Int? {
+        guard let q = qiuling, let e = english, e > 0 else { return nil }
+        return Int((Double(q) / Double(e) * 100).rounded())
+    } }
+    var readingGoal: ReadingGoal {
+        func mean(_ mode: String) -> Int? {
+            let last = book.sessions.filter { $0.mode == mode }.suffix(3).map(\.wpm)
+            return last.isEmpty ? nil : last.reduce(0, +) / last.count
+        }
+        return ReadingGoal(qiuling: mean("read-test"), english: mean("read-english"))
+    }
 
     /// Marks you get wrong most, with enough sightings to mean something.
     func hardest(min: Int = 3) -> [(text: String, record: MarkRecord)] {

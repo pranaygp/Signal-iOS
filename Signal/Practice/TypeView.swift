@@ -32,6 +32,9 @@ final class RaceModel: ObservableObject {
     @Published var input = ""          // the hidden field's text; diffed into keys
     /// Bumped per keystroke so views holding the `Race` reference re-render.
     @Published private(set) var generation = 0
+    /// Where the sentences came from, when they were an excerpt: the results
+    /// show the English of the lines that were read.
+    private(set) var feed: PracticePassages.Feed?
     private var lastInput = ""
     private var ticker: Timer?
 
@@ -43,7 +46,7 @@ final class RaceModel: ObservableObject {
         // falls back to sentences, and the text it kept is let go.
         if Source(rawValue: sourceRaw) == nil { sourceRaw = Source.sentences.rawValue }
         UserDefaults.standard.removeObject(forKey: "Practice.ownText")
-        Task { await PracticeCorpus.shared.loadIfNeeded(); corpusReady = true; if race == nil { start() } }
+        Task { await PracticeCorpus.shared.loadIfNeeded(); await PracticePassages.shared.loadIfNeeded(); corpusReady = true; if race == nil { start() } }
         NotificationCenter.default.addObserver(forName: QiulingFonts.fontDidChange, object: nil, queue: .main) { [weak self] _ in
             QiulingSegmenter.clearCache(); self?.start()
         }
@@ -51,7 +54,7 @@ final class RaceModel: ObservableObject {
 
     private func nextLine() -> String {
         switch source {
-        case .sentences: return PracticeCorpus.shared.nextSentence()
+        case .sentences: return feed?.next() ?? PracticeCorpus.shared.nextSentence()
         case .words: return PracticeCorpus.shared.nextWordLine()
         }
     }
@@ -60,6 +63,9 @@ final class RaceModel: ObservableObject {
         ticker?.invalidate(); ticker = nil
         finished = false
         input = ""; lastInput = ""
+        // Real excerpts — consecutive sentences from one book — rather than the
+        // corpus's shuffled lines, so there is something to have understood.
+        feed = source == .sentences && PracticePassages.shared.isAvailable ? PracticePassages.shared.feed() : nil
         race = Race(seconds: TimeInterval(seconds), next: nextLine)
         remaining = TimeInterval(seconds)
     }
@@ -124,7 +130,7 @@ struct TypeView: View {
                     header
                         .padding(.horizontal, OWSTableViewController2.defaultHOuterMargin)
                         .padding(.vertical, 12)
-                    ResultsView(race: race) { model.start(); passageFocused = true }
+                    ResultsView(race: race, excerpts: model.feed?.excerpts(first: race.lineIndex + 1) ?? []) { model.start(); passageFocused = true }
                 }
                 .transition(.opacity)
             } else {
@@ -355,6 +361,8 @@ struct PassageView: View {
 @available(iOS 16, *)
 struct ResultsView: View {
     let race: Race
+    /// The English of the lines read, when they were excerpts.
+    var excerpts: [PracticePassages.Excerpt] = []
     let again: () -> Void
     @State private var celebrate = false
     @ScaledMetric(relativeTo: .title) private var glyphSize: CGFloat = 30
@@ -392,6 +400,19 @@ struct ResultsView: View {
                 Text("Second by second")
             } footer: {
                 Text("Pace is your speed so far at each second. Dots mark seconds with a mistake.")
+            }
+
+            if !excerpts.isEmpty {
+                SignalSection {
+                    ForEach(Array(excerpts.enumerated()), id: \.offset) { _, e in
+                        ExcerptView(excerpt: e)
+                            .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
+                    }
+                } header: {
+                    Text("What you read")
+                } footer: {
+                    Text("The lines you reached, as printed, so you can check what you took in against the text.")
+                }
             }
 
             if !misread.isEmpty {

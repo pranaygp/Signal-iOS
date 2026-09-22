@@ -58,9 +58,11 @@ reading trainer natively — SwiftUI, Liquid Glass on iOS 26, the Vermilion
 palette — with the same features as `web/read.html`. It is built like the
 other home tabs: the system navigation bar carries the title, the avatar and
 settings button, and the actions; sections push through Signal's navigation
-controller. The tab lands straight on the type race (sentences, words, or
-your own text; 15–120 s); the bar's icons push recall (a mark and four
-spellings) and progress across sittings, and its "…" menu holds write
+controller. The tab lands on reading aloud: one real excerpt, blurred until a
+tap reveals it and starts the clock, timed to the tap that says it is read,
+with the English shown back afterwards and its book cited. The bar's icons
+push the type race (sentences, words, or your own text; 15–120 s), recall (a
+mark and four spellings) and progress across sittings, and its "…" menu holds write
 (English in, a Qiuling picture out, to share into any chat) and the Safari
 bookmark that sets pages in the script. Controls are the system's — segmented
 pickers, glass buttons on iOS 26 with bordered fallbacks, menus, Charts,
@@ -73,6 +75,16 @@ lives in `Signal/Practice/`:
   screen for whatever alphabet is current, downloaded copies included. The
   corpus (`Resources/corpus.txt`, the trainer's) and per-alphabet stats
   (`Application Support/Practice/<build>.json`) sit beside it.
+- `ReadView.swift` — reading aloud, ported from the web trainer's speak tab:
+  the reader holds the clock, so the time is honest with or without the
+  recogniser; `SFSpeechRecognizer` (on device when it can be), when switched
+  on, only scores. The test is sixty words of one excerpt in Qiuling or in
+  English, and Progress reports the Qiuling test as a share of the English
+  one — the mouth is in both, so what is left is the script.
+- `Passages.swift` — the excerpts (`Resources/passages.json`, copied from
+  `web/passages.json`; `tools/build_passages.py` writes it) and the word
+  alignment that scores a transcript. The type race draws its sentences from
+  the same excerpts, in order, and shows their English afterwards too.
 - `TypeView.swift`, `PracticeSections.swift`, `PracticeTheme.swift` — the
   screens.
 - `PracticeHostViewController.swift` — the tab's view controller (nav items,
