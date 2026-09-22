@@ -108,7 +108,23 @@ class QiulingSettingsViewController: OWSTableViewController2 {
         if let latest = status.latestVersion {
             alphabet.add(.label(withText: "Latest available", accessoryText: latest, accessoryType: .none))
         }
-        alphabet.footerTitle = "Qiuling is the script used in Practice, Recall and Write. Marks are the letters and letter groups it draws as one shape. The alphabet is still being drawn, so the app keeps it current."
+        // A registration the system refused is the one failure the screen
+        // would otherwise hide behind a fallback: say what it was.
+        if let problem = status.problem {
+            alphabet.add(OWSTableItem(customCellBlock: {
+                let cell = OWSTableItem.newCell()
+                cell.textLabel?.text = "Problem: \(problem)"
+                cell.textLabel?.numberOfLines = 0
+                cell.textLabel?.font = .dynamicTypeFootnote
+                cell.textLabel?.textColor = .Signal.red
+                return cell
+            }))
+        }
+        alphabet.add(OWSTableItem.item(name: "Copy diagnostics", textColor: .Signal.accent) { [weak self] in
+            UIPasteboard.general.string = self?.fonts.diagnostics()
+            self?.presentToast(text: "Diagnostics copied — paste them into a message or bug report.")
+        })
+        alphabet.footerTitle = "Qiuling is the script used in Practice, Recall and Write. Marks are the letters and letter groups it draws as one shape. The alphabet is still being drawn, so the app keeps it current: the copy in use should be a downloaded one whenever a newer drawing has been published; the included copy is the fallback."
         contents.add(alphabet)
 
         let updates = OWSTableSection()
@@ -227,8 +243,8 @@ class QiulingSettingsViewController: OWSTableViewController2 {
                 sentence = "Last checked \(relativeDescription(of: lastCheck.date)). You have the latest alphabet\(which)."
             case .updated:
                 sentence = "Updated to the latest alphabet just now."
-            case .failed:
-                sentence = "Couldn't check for updates. Try again when you're online."
+            case .failed(let message):
+                sentence = "The last check, \(relativeDescription(of: lastCheck.date)), failed: \(message)"
             }
         } else {
             sentence = "Not checked yet."

@@ -84,6 +84,9 @@ public final class QiulingFonts {
         let faces: [String: (url: URL, sha: String)]
 
         var urls: [URL] { [url] + Self.orderedFaces.compactMap { faces[$0]?.url } }
+        /// Whether `other` is one of this set's files, whichever way the
+        /// system spells the path (`/private/var` and `/var` are one place).
+        func contains(_ other: URL) -> Bool { urls.contains { QiulingFonts.sameFile($0, other) } }
         var isComplete: Bool { faces.count == QiulingFonts.faces.count }
         var faceShas: [String: String] { faces.mapValues { $0.sha } }
         static let orderedFaces = QiulingFonts.faces.map { $0.key }
@@ -155,7 +158,7 @@ public final class QiulingFonts {
             // an earlier download since replaced, or the bundled copy when
             // the download is what we want now. They are re-installed from
             // this set once it is in.
-            let conflicting = registeredPhoneWide().filter { !set.urls.contains($0) }
+            let conflicting = registeredPhoneWide().filter { !set.contains($0) }
             if !conflicting.isEmpty {
                 Logger.warn("registering \(set.url.lastPathComponent) failed (\(CFErrorGetCode(err))); clearing \(conflicting.count) phone-wide registration(s) from other files and retrying")
                 unregisterPhoneWide(conflicting)
@@ -190,6 +193,7 @@ public final class QiulingFonts {
                 return true
             case .failure(let err):
                 Logger.warn("downloaded font failed to register, falling back to the bundled one: \(err)")
+                noteProblem("Downloaded font \(set.url.lastPathComponent) could not be registered: \(Self.describe(err))")
                 if Self.badFileCodes.contains(CFErrorGetCode(err)) { forgetDownloaded() }
             }
         }
@@ -197,13 +201,87 @@ public final class QiulingFonts {
         switch registerForProcess(bundled) {
         case .success(let urls):
             processRegisteredURLs = urls
+            if downloadedSet == nil { clearProblem() }
             logStatus("launch")
             return true
         case .failure(let err):
             Logger.error("bundled Qiuling font failed to register: \(err)")
+            noteProblem("Neither the downloaded nor the bundled font could be registered: \(Self.describe(err))")
             logStatus("launch")
             return false
         }
+    }
+
+    // MARK: - Problems, kept for Settings
+
+    /// The last thing that went wrong with the font itself — a registration
+    /// the system refused — as Settings › Qiuling shows it. Cleared when the
+    /// set the app wants is registered cleanly.
+    private let lastProblemKey = "QiulingFonts.lastProblem"
+    private let lastProblemAtKey = "QiulingFonts.lastProblemAt"
+
+    private func noteProblem(_ message: String) {
+        defaults.set(message, forKey: lastProblemKey)
+        defaults.set(Date(), forKey: lastProblemAtKey)
+    }
+
+    private func clearProblem() {
+        defaults.removeObject(forKey: lastProblemKey)
+        defaults.removeObject(forKey: lastProblemAtKey)
+    }
+
+    static func describe(_ error: CFError) -> String {
+        let ns = error as Error as NSError
+        return "\(ns.domain) \(ns.code): \(ns.localizedDescription)"
+    }
+
+    /// Everything about the font's state on this device, as text to paste
+    /// into a bug report: what is in use, what the phone has installed, what
+    /// the store holds, and the last errors.
+    public func diagnostics() -> String {
+        let f = ISO8601DateFormatter()
+        var lines: [String] = []
+        lines.append("Qiuling font diagnostics — \(f.string(from: Date()))")
+        lines.append("app build: \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?")")
+        lines.append("family: \(Self.family)  build id: \(Self.buildId)")
+        lines.append("resolvable in process: \(Self.isResolvable)")
+        lines.append("process registrations (\(processRegisteredURLs.count)):")
+        for url in processRegisteredURLs { lines.append("  \(Self.short(url))") }
+        let persistent = registeredPhoneWideDescriptors()
+        lines.append("phone-wide registrations (\(persistent.count)):")
+        for (d, url) in persistent {
+            let name = CTFontDescriptorCopyAttribute(d, kCTFontNameAttribute) as? String ?? "?"
+            let exists = FileManager.default.fileExists(atPath: url.path)
+            lines.append("  \(name)  \(Self.short(url))\(exists ? "" : "  [FILE MISSING]")")
+        }
+        lines.append("downloaded set: \(downloadedSet.map { "\($0.sha.prefix(12)) + \($0.faces.count) faces" } ?? "none")")
+        lines.append("bundled set: \(Self.bundledSet.map { "\($0.sha.prefix(12)) + \($0.faces.count) faces" } ?? "none")")
+        lines.append("defaults: currentSha=\(defaults.string(forKey: currentShaKey)?.prefix(12) ?? "nil") installedSha=\(defaults.string(forKey: installedShaKey)?.prefix(12) ?? "nil")"
+                     + " currentFaces=\((defaults.dictionary(forKey: currentFacesKey) as? [String: String])?.count ?? 0) installedFaces=\((defaults.dictionary(forKey: installedFacesKey) as? [String: String])?.count ?? 0)")
+        let store = (try? FileManager.default.contentsOfDirectory(at: storeDirectory, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+        lines.append("store (\(store.count) files):")
+        for url in store {
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            lines.append("  \(url.lastPathComponent)  \(size) B")
+        }
+        lines.append("manifest url: \(manifestURL?.absoluteString ?? "none")  bypass token: \(bypassToken == nil ? "missing" : "present")")
+        if let lastCheck {
+            lines.append("last check: \(f.string(from: lastCheck.date)) — \(lastCheck.outcome)")
+        } else {
+            lines.append("last check: never")
+        }
+        lines.append("latest offered: \(defaults.string(forKey: latestBuiltAtKey) ?? "unknown")")
+        if let problem = defaults.string(forKey: lastProblemKey), let at = defaults.object(forKey: lastProblemAtKey) as? Date {
+            lines.append("last problem: \(f.string(from: at)) — \(problem)")
+        } else {
+            lines.append("last problem: none")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func short(_ url: URL) -> String {
+        let parts = url.pathComponents
+        return parts.count > 2 ? ".../" + parts.suffix(2).joined(separator: "/") : url.path
     }
 
     /// One line saying whether the script can be drawn right now, and by what.
@@ -293,6 +371,8 @@ public final class QiulingFonts {
         public let isUsingDownloadedCopy: Bool
         /// Whether the process can draw with the font at all right now.
         public let isResolvable: Bool
+        /// The last registration failure, for Settings; nil when the set in use registered cleanly.
+        public let problem: String?
         /// How many of the derived faces (bold, italic, bold italic) the set in use carries.
         public let facesCount: Int
         /// When the font in use was built, if known.
@@ -324,6 +404,7 @@ public final class QiulingFonts {
             sha: current?.sha ?? "",
             isUsingDownloadedCopy: downloaded,
             isResolvable: Self.isResolvable,
+            problem: defaults.string(forKey: lastProblemKey),
             facesCount: processRegisteredURLs.isEmpty ? 0 : processRegisteredURLs.count - 1,
             buildDate: downloaded ? downloadedBuildDate : Self.bundledBuildDate,
             lastCheck: lastCheck,
@@ -593,10 +674,10 @@ public final class QiulingFonts {
 
     /// Delete store files that no registration (ours or the phone's) refers to.
     private func cleanUpStore() {
-        let inUse = Set((currentSet?.urls ?? []) + registeredPhoneWide() + processRegisteredURLs)
+        let inUse = (currentSet?.urls ?? []) + registeredPhoneWide() + processRegisteredURLs
         let blocks = currentSet.map { storeDirectory.appendingPathComponent("\($0.sha).blocks.json") }
         for file in (try? FileManager.default.contentsOfDirectory(at: storeDirectory, includingPropertiesForKeys: nil)) ?? [] {
-            if inUse.contains(file) || file == blocks { continue }
+            if inUse.contains(where: { Self.sameFile($0, file) }) || file == blocks { continue }
             try? FileManager.default.removeItem(at: file)
         }
     }
@@ -621,11 +702,13 @@ public final class QiulingFonts {
         switch registerForProcess(set) {
         case .success(let urls):
             processRegisteredURLs = urls
+            clearProblem()
             logStatus("swap")
             NotificationCenter.default.post(name: .themeDidChange, object: nil)
             return true
         case .failure(let err):
             Logger.error("could not swap the Qiuling font in-process: \(err); keeping the previous one")
+            noteProblem("The updated font \(set.url.lastPathComponent) could not be registered: \(Self.describe(err))")
             for url in old where (try? registerFile(url).get()) != nil {
                 processRegisteredURLs.append(url)
             }
@@ -700,12 +783,12 @@ public final class QiulingFonts {
     /// URL; it is then removed by its descriptor, which is how the registry
     /// itself refers to it.
     private func unregisterPhoneWide(_ urls: [URL]) {
-        let byURL = Dictionary(registeredPhoneWideDescriptors().map { ($0.url, $0.descriptor) }, uniquingKeysWith: { a, _ in a })
+        let registered = registeredPhoneWideDescriptors()
         for url in urls {
             var error: Unmanaged<CFError>?
             if CTFontManagerUnregisterFontsForURL(url as CFURL, .persistent, &error) { continue }
             Logger.warn("could not unregister phone-wide \(url.lastPathComponent) by URL: \(String(describing: error?.takeRetainedValue())); trying its descriptor")
-            guard let descriptor = byURL[url] else { continue }
+            guard let descriptor = registered.first(where: { Self.sameFile($0.url, url) })?.descriptor else { continue }
             let done = DispatchSemaphore(value: 0)
             var failed: [CFError] = []
             CTFontManagerUnregisterFontDescriptors([descriptor] as CFArray, .persistent) { errors, isDone in
@@ -742,8 +825,7 @@ public final class QiulingFonts {
     public func installPhoneWide() async -> Result<Void, Error> {
         guard let current = currentSet else { return .failure(OWSGenericError("no Qiuling font to install")) }
 
-        let wanted = Set(current.urls)
-        unregisterPhoneWide(registeredPhoneWide().filter { !wanted.contains($0) })
+        unregisterPhoneWide(registeredPhoneWide().filter { !current.contains($0) })
         let result: Result<Void, Error> = await withCheckedContinuation { continuation in
             // The handler runs once per font and once more when done; only the
             // last call may resume, and only once.
@@ -769,6 +851,7 @@ public final class QiulingFonts {
             Logger.info("Qiuling installed for the whole phone (\(current.sha.prefix(8)), \(current.faces.count) faces)")
         case .failure(let error):
             Logger.warn("Qiuling phone-wide registration: \(error)")
+            noteProblem("Installing for other apps failed: \((error as NSError).domain) \((error as NSError).code): \(error.localizedDescription)")
         }
         logStatus("phone-wide install")
         NotificationCenter.default.post(name: Self.statusDidChange, object: nil)
@@ -777,6 +860,10 @@ public final class QiulingFonts {
 
     private func registeredPhoneWide() -> [URL] {
         registeredPhoneWideDescriptors().map { $0.url }
+    }
+
+    static func sameFile(_ a: URL, _ b: URL) -> Bool {
+        a.standardizedFileURL.resolvingSymlinksInPath().path == b.standardizedFileURL.resolvingSymlinksInPath().path
     }
 
     /// The bytes of the font in use — the downloaded copy if there is one.
