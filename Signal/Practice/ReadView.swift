@@ -71,7 +71,8 @@ final class ReadModel: ObservableObject {
             if excerpt == nil { start() }
         }
         NotificationCenter.default.addObserver(forName: QiulingFonts.fontDidChange, object: nil, queue: .main) { [weak self] _ in
-            QiulingSegmenter.clearCache(); self?.start()
+            QiulingSegmenter.clearCache()
+            Task { @MainActor in self?.start() }
         }
     }
 
@@ -744,7 +745,7 @@ struct ReadResultsView: View {
 
     private func comparison(_ g: PracticeStore.ReadingGoal) -> String? {
         if isTest {
-            if let pct = g.percent { return "Aloud you read Qiuling at \(pct)% of your English speed (\(g.qiuling ?? 0) vs \(g.english ?? 0) words a minute, last three tests of each)." }
+            if let pct = g.percent { return "Aloud you read Qiuling at \(pct)% of your English speed (\(g.qiuling ?? 0) vs \(g.english ?? 0) words a minute, last \(g.baselineN) English reading\(g.baselineN == 1 ? "" : "s"), 3-test average)." }
             return "Take the test in English once, and this becomes your share of your English reading speed."
         }
         if isEnglish {

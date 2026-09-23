@@ -98,6 +98,16 @@ final class PracticeHostViewController: UIHostingController<ReadView>, HomeTabVi
         let progress = ProgressTabView(
             race: { [weak self] in self?.navigationController?.popToRootViewController(animated: true) },
             recall: { [weak self] in self?.pushRecall() },
+            typing: { [weak self] in self?.push(TypingProgressView(), title: "Typing") },
+            // The owned model is set up directly, not through its defaults: a
+            // passage mid-read is dropped for the test asked for.
+            readTest: { [weak self] english in
+                guard let self else { return }
+                reading.source = .test
+                reading.script = english ? .english : .qiuling
+                reading.start()
+                navigationController?.popToRootViewController(animated: true)
+            },
         )
         push(progress, title: "Progress")
     }

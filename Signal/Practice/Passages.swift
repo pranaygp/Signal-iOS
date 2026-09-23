@@ -28,6 +28,10 @@ final class PracticePassages {
         let book: Int
         let title: String
         let author: String
+        /// `book:run:start` for an excerpt cut from the passage file; nil for
+        /// the corpus fallback and the typing feed. Stored with a reading so
+        /// the same excerpt can be found again.
+        var key: String? = nil
         var words: [String] { sentences.flatMap(PracticePassages.words) }
         var url: URL { URL(string: "https://www.gutenberg.org/ebooks/\(book)")! }
         var citation: String { author.isEmpty ? title : "\(author), \(title)" }
@@ -72,24 +76,24 @@ final class PracticePassages {
         return nil
     }
 
-    private func excerpt(_ run: Run, sentences: [String]) -> Excerpt {
+    private func excerpt(_ run: Run, sentences: [String], key: String? = nil) -> Excerpt {
         let book = books[String(run.b)]
-        return Excerpt(sentences: sentences, book: run.b, title: book?.title ?? "", author: book?.author ?? "")
+        return Excerpt(sentences: sentences, book: run.b, title: book?.title ?? "", author: book?.author ?? "", key: key)
     }
 
     /// About `n` words of one excerpt: whole sentences from a random start,
     /// to the end of the sentence that crosses `n`.
     func excerpt(words n: Int) -> Excerpt? {
-        guard let (_, run) = pickRun(min: n) else { return nil }
+        guard let (i, run) = pickRun(min: n) else { return nil }
         let counts = run.s.map { PracticePassages.words($0).count }
         let total = counts.reduce(0, +)
         var starts = [Int]()
         var rest = total
-        for i in run.s.indices { if rest >= n { starts.append(i) }; rest -= counts[i] }
+        for j in run.s.indices { if rest >= n { starts.append(j) }; rest -= counts[j] }
         let start = starts.randomElement() ?? 0
         var out = [String](); var got = 0
-        for i in start..<run.s.count where got < n { out.append(run.s[i]); got += counts[i] }
-        return excerpt(run, sentences: out)
+        for j in start..<run.s.count where got < n { out.append(run.s[j]); got += counts[j] }
+        return excerpt(run, sentences: out, key: "\(run.b):\(i):\(start)")
     }
 
     /// Sentences for the typing race, in order, one excerpt after another.

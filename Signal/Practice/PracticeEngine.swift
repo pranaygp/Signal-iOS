@@ -447,6 +447,12 @@ final class PracticeStore: ObservableObject {
         /// A reading's passage length. Files from before there were readings
         /// have no such key, and decode it as nil.
         var words: Int? = nil
+        /// Whether a recogniser scored the reading: true → wpm is words
+        /// correct, false → words read, nil → a row from before the flag.
+        var listened: Bool? = nil
+        /// The passage read, `book:run:start`, so a later English reading of
+        /// the same excerpt can be found. Typed rows have none.
+        var excerptID: String? = nil
         /// Cumulative exposure to the script as it stood when this session
         /// ended, in seconds and in marks read; the x of the learning curve.
         /// Sessions from before the field are restamped on load.
@@ -603,6 +609,7 @@ final class PracticeStore: ObservableObject {
         book.append(Session(
             date: Date(), seconds: Int(r.seconds.rounded()), mode: mode, wpm: r.wpm,
             accuracy: r.accuracy, chars: 0, misread: r.errors, words: r.words,
+            listened: r.listened, excerptID: r.excerpt.key,
         ), marks: r.words)
         save()
     }
@@ -612,24 +619,170 @@ final class PracticeStore: ObservableObject {
 
     var typedSessions: [Session] { book.sessions.filter { !$0.isReading } }
     var readSessions: [Session] { book.sessions.filter { $0.isReading && $0.mode != "read-english" } }
+    var readTests: [Session] { book.sessions.filter { $0.mode == "read-test" } }
+    var englishReadings: [Session] { book.sessions.filter { $0.mode == "read-english" } }
+    /// Every run in the script, typed and spoken: the x of the learning curve
+    /// and the clock the break table reads gaps from.
+    var exposureSessions: [Session] { book.sessions.filter(\.isExposure) }
 
     /// The typed race's best, as before.
     var best: Int { typedSessions.map(\.wpm).max() ?? 0 }
-    var bestReading: Int { readSessions.map(\.wpm).max() ?? 0 }
 
-    /// The goal, aloud: the Qiuling test against the English test on the same
-    /// kind of passage, each the mean of its last three. The mouth is in both,
-    /// so what is left is the script; 100 is the daily-driver line.
-    struct ReadingGoal { let qiuling: Int?; let english: Int?; var percent: Int? {
-        guard let q = qiuling, let e = english, e > 0 else { return nil }
-        return Int((Double(q) / Double(e) * 100).rounded())
-    } }
-    var readingGoal: ReadingGoal {
-        func mean(_ mode: String) -> Int? {
-            let last = book.sessions.filter { $0.mode == mode }.suffix(3).map(\.wpm)
-            return last.isEmpty ? nil : last.reduce(0, +) / last.count
+    // MARK: The share of English, aloud
+
+    /// One Qiuling test against its English baseline. The baseline is the
+    /// median of up to three English readings taken within two weeks before
+    /// the test (or in the same sitting after it), like-for-like on the
+    /// microphone where the flag is known. Mirrors `ratioSeries` in the web
+    /// trainer's `stats.js`; the two must agree to the integer.
+    struct RatioPoint: Identifiable {
+        let id: UUID
+        let date: Date
+        let wpm: Int
+        let accuracy: Int
+        let listened: Bool?
+        /// Qiuling ÷ English, in percent; nil when there is no English at all.
+        let percent: Int?
+        /// The trailing mean of the last three percents: the headline.
+        var trend: Int?
+        let baseline: Int?
+        let baselineN: Int
+        let baselineAt: Date?
+        let ageDays: Int
+        /// Every English reading came after the sitting.
+        let provisional: Bool
+        /// The nearest English reading was older than two weeks.
+        let stale: Bool
+        /// The pool and the test disagree on the microphone.
+        let mixed: Bool
+        var scored: Bool { listened == true && !mixed }
+        /// Drawn as an open dot: read loosely.
+        var hollow: Bool { stale || mixed || provisional || listened != true }
+    }
+    struct RatioSeries {
+        let points: [RatioPoint]
+        /// Percentage points a week, by least squares, once four tests span two weeks.
+        let slope: Double?
+        let headline: Int?
+        let delta: Int?
+        let baselineN: Int
+        let englishAt: Date?
+        let tests: Int
+        let unpaired: Int
+    }
+
+    private static let sittingMs: Int64 = 7_200_000
+    private static let freshMs: Int64 = 1_209_600_000
+    private static let poolSize = 3
+    private static let trendMinN = 4
+    private static let trendMinSpanMs: Int64 = freshMs
+
+    /// The middle value, or the mean of the two middle ones. Never rounded.
+    static func median(_ xs: [Double]) -> Double {
+        let s = xs.sorted()
+        let n = s.count
+        return n % 2 == 1 ? s[n / 2] : (s[n / 2 - 1] + s[n / 2]) / 2
+    }
+
+    func ratioSeries(test: String = "read-test", base: String = "read-english", now: Date = Date()) -> RatioSeries {
+        func ms(_ d: Date) -> Int64 { Int64(d.timeIntervalSince1970 * 1000) }
+        let asc = book.sessions.enumerated()
+            .sorted { ($0.element.date, $0.offset) < ($1.element.date, $1.offset) }
+            .map(\.element)
+        let tests = asc.filter { $0.mode == test && $0.wpm > 0 }
+        let bases = asc.filter { $0.mode == base && $0.wpm > 0 }
+
+        var points = [RatioPoint]()
+        var valid = [Int]()
+        var unpaired = 0
+        for t in tests {
+            let tAt = ms(t.date)
+            var cand = bases.filter { ms($0.date) <= tAt + Self.sittingMs }
+            var provisional = false
+            if cand.isEmpty, !bases.isEmpty { cand = bases; provisional = true }
+            if let l = t.listened {
+                let same = cand.filter { $0.listened == l }
+                if !same.isEmpty { cand = same }
+            }
+            let pool: [Session]
+            if provisional {
+                pool = Array(cand.prefix(Self.poolSize))
+            } else {
+                let fresh = cand.filter { ms($0.date) >= tAt - Self.freshMs }
+                pool = fresh.isEmpty ? (cand.last.map { [$0] } ?? []) : Array(fresh.suffix(Self.poolSize))
+            }
+            guard !pool.isEmpty else {
+                points.append(RatioPoint(
+                    id: t.id, date: t.date, wpm: t.wpm, accuracy: t.accuracy, listened: t.listened,
+                    percent: nil, trend: nil, baseline: nil, baselineN: 0, baselineAt: nil, ageDays: 0,
+                    provisional: false, stale: false, mixed: false,
+                ))
+                unpaired += 1
+                continue
+            }
+            let baseline = Self.median(pool.map { Double($0.wpm) })
+            let pct = Int((100 * Double(t.wpm) / baseline).rounded())
+            let baselineAt = pool.map { ms($0.date) }.max()!
+            let ageDays = max(0, Int(floor(Double(tAt - baselineAt) / 864e5)))
+            let stale = !provisional && (tAt - baselineAt) > Self.freshMs
+            let mixed = pool.contains { $0.listened != nil && t.listened != nil && $0.listened != t.listened }
+            valid.append(pct)
+            let window = valid.suffix(min(3, valid.count))
+            let trend = Int((Double(window.reduce(0, +)) / Double(window.count)).rounded())
+            points.append(RatioPoint(
+                id: t.id, date: t.date, wpm: t.wpm, accuracy: t.accuracy, listened: t.listened,
+                percent: pct, trend: trend, baseline: Int(baseline.rounded()), baselineN: pool.count,
+                baselineAt: Date(timeIntervalSince1970: Double(baselineAt) / 1000), ageDays: ageDays,
+                provisional: provisional, stale: stale, mixed: mixed,
+            ))
         }
-        return ReadingGoal(qiuling: mean("read-test"), english: mean("read-english"))
+
+        let v = points.filter { $0.percent != nil }
+        var slope: Double?
+        if let first = v.first, let last = v.last, v.count >= Self.trendMinN, ms(last.date) - ms(first.date) >= Self.trendMinSpanMs {
+            let t0 = ms(first.date)
+            let xs = v.map { Double(ms($0.date) - t0) / 604_800_000 }
+            let ys = v.map { Double($0.percent!) }
+            let n = Double(v.count)
+            let mx = xs.reduce(0, +) / n, my = ys.reduce(0, +) / n
+            var sxy = 0.0, sxx = 0.0
+            for i in v.indices { sxy += (xs[i] - mx) * (ys[i] - my); sxx += (xs[i] - mx) * (xs[i] - mx) }
+            if sxx > 1e-9 { slope = sxy / sxx }
+        }
+        let headline = v.last?.trend
+        let delta: Int? = v.count >= 2 ? headline.flatMap { h in v[v.count - 2].trend.map { h - $0 } } : nil
+        return RatioSeries(
+            points: points, slope: slope, headline: headline, delta: delta, baselineN: v.last?.baselineN ?? 0,
+            englishAt: bases.last?.date, tests: tests.count, unpaired: unpaired,
+        )
+    }
+
+    /// The goal, aloud, read off `ratioSeries`: the Qiuling test against the
+    /// English test on the same kind of passage. The mouth is in both, so what
+    /// is left is the script; 100 is the daily-driver line.
+    struct ReadingGoal {
+        let qiuling: Int?
+        let english: Int?
+        let percent: Int?
+        let delta: Int?
+        let baselineN: Int
+        let englishAt: Date?
+        let tests: Int
+        let scored: Bool
+        let misreadPercent: Int?
+    }
+    var readingGoal: ReadingGoal {
+        let r = ratioSeries()
+        let recent = readTests.suffix(3)
+        let scored = recent.filter { $0.listened == true }
+        func mean(_ xs: [Int]) -> Double { Double(xs.reduce(0, +)) / Double(xs.count) }
+        return ReadingGoal(
+            qiuling: recent.isEmpty ? nil : Int(mean(recent.map(\.wpm)).rounded()),
+            english: r.points.last?.baseline,
+            percent: r.headline, delta: r.delta, baselineN: r.baselineN, englishAt: r.englishAt, tests: r.tests,
+            scored: r.points.last?.scored ?? false,
+            misreadPercent: scored.isEmpty ? nil : Int((100 - mean(scored.map(\.accuracy))).rounded()),
+        )
     }
 
     /// Marks you get wrong most, with enough sightings to mean something.
@@ -696,9 +849,11 @@ enum LearningCurve {
     }
 
     struct Break: Identifiable {
-        var id: Date { date }
+        /// The gap's end. Gaps sharing one first-back row are folded into one.
+        let id: Date
+        /// When the first of the series came back, as the web's "back on".
         let date: Date
-        let days: Int
+        var days: Int
         /// Mean speed of the three runs before the gap, the first run back,
         /// and the mean of the three after it.
         let before: Int
@@ -708,22 +863,32 @@ enum LearningCurve {
         var afterPercent: Int { before > 0 ? Int((Double(after) / Double(before) * 100).rounded()) : 0 }
     }
 
-    /// Every gap of `minDays` or more between consecutive sessions, and what
-    /// came back across it. Potter lost her cipher over decades away; Kolers'
-    /// readers kept theirs across a year. Where you sit shows up as `first`
-    /// against `before`, break by break.
-    static func breaks(_ sessions: [PracticeStore.Session], minDays: Int = 2) -> [Break] {
+    /// Every gap of `minDays` or more in `exposure` — all practice in the
+    /// script, typed and spoken — scored on `series`: the last three of it
+    /// before the gap, the first of it after, and the three after that. A gap
+    /// with nothing of the series on one side is skipped. Potter lost her
+    /// cipher over decades away; Kolers' readers kept theirs across a year.
+    /// Where you sit shows up as `first` against `before`, break by break.
+    static func breaks(exposure: [PracticeStore.Session], series: [PracticeStore.Session], minDays: Int = 2) -> [Break] {
         var out: [Break] = []
-        func mean(_ s: ArraySlice<PracticeStore.Session>) -> Int {
+        func mean(_ s: [PracticeStore.Session]) -> Int {
             s.isEmpty ? 0 : Int((Double(s.map(\.wpm).reduce(0, +)) / Double(s.count)).rounded())
         }
-        for i in 1..<max(1, sessions.count) {
-            let days = sessions[i].date.timeIntervalSince(sessions[i - 1].date) / 86400
+        for i in 1..<max(1, exposure.count) {
+            let gapStart = exposure[i - 1].date, gapEnd = exposure[i].date
+            let days = gapEnd.timeIntervalSince(gapStart) / 86400
             guard days >= Double(minDays) else { continue }
+            let pre = Array(series.filter { $0.date <= gapStart }.suffix(3))
+            let post = Array(series.filter { $0.date >= gapEnd }.prefix(3))
+            guard !pre.isEmpty, let firstBack = post.first else { continue }
+            // Several gaps with nothing of the series between them are one
+            // absence as far as the series can tell: keep the longest.
+            if let dup = out.firstIndex(where: { $0.date == firstBack.date }) {
+                out[dup].days = max(out[dup].days, Int(days.rounded())); continue
+            }
             out.append(Break(
-                date: sessions[i].date, days: Int(days.rounded()),
-                before: mean(sessions[max(0, i - 3)..<i]), first: sessions[i].wpm,
-                after: mean(sessions[i..<min(sessions.count, i + 3)])
+                id: gapEnd, date: firstBack.date, days: Int(days.rounded()),
+                before: mean(pre), first: firstBack.wpm, after: mean(post)
             ))
         }
         return out

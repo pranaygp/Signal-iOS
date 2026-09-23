@@ -136,68 +136,91 @@ struct WriteView: View {
 
 // MARK: - Progress
 
+/// The Progress tab answers one question first: what share of your English
+/// read-aloud speed are you at, is it moving, and can the number be trusted
+/// right now. Every reading section is drawn from one slice — the tests, or
+/// every reading — and typing has its own screen behind a row.
 @available(iOS 16, *)
 struct ProgressTabView: View {
-    /// Pops back to the race, from the empty state.
+    /// Pops back to the passage, from the empty state.
     var race: () -> Void = {}
     /// Pushes Recall, from the empty state.
     var recall: () -> Void = {}
+    /// Pushes the typing screen.
+    var typing: () -> Void = {}
+    /// Sets the test up — in English when true — and pops back to it.
+    var readTest: (Bool) -> Void = { _ in }
+
+    /// Which readings the reading sections are drawn from.
+    enum ReadScope: String, CaseIterable, Identifiable {
+        case tests, all
+        var id: String { rawValue }
+        var label: String { self == .tests ? "tests" : "all readings" }
+    }
 
     @ObservedObject private var store = PracticeStore.shared
+    @AppStorage("Progress.readScope") private var scopeRaw = ""
     @State private var blocks: [String] = QiulingFonts.shared.blocks
     @State private var detail: String?
     @State private var confirmReset = false
-    @ScaledMetric(relativeTo: .title) private var rowGlyph: CGFloat = 30
+    @State private var showAbout = false
+    @State private var selectedDate: Date?
 
     private struct Mark: Identifiable { let text: String; var id: String { text } }
 
     var body: some View {
-        let sessions = store.typedSessions
-        let readings = store.readSessions
-        let hasRecall = !store.book.recall.isEmpty
+        let typed = store.typedSessions
+        let tests = store.readTests
+        let stored = ReadScope(rawValue: scopeRaw)
+        let scope: ReadScope = stored ?? (tests.count >= 2 ? .tests : .all)
+        let readings = scope == .tests ? tests : store.readSessions
+        let series = store.ratioSeries()
+        let nothing = typed.isEmpty && store.readSessions.isEmpty && store.book.recall.isEmpty
         Group {
-            if sessions.isEmpty, readings.isEmpty, !hasRecall {
+            if nothing {
                 empty.transition(.opacity)
             } else {
                 SignalList {
-                    if readings.isEmpty {
-                        SignalSection {
-                            EmptyView()
-                        } footer: {
-                            Text("No readings yet. Read a passage aloud and your speed shows up here.")
-                        }
+                    if store.readSessions.isEmpty {
+                        readingEmpty
                     } else {
-                        reading(readings)
+                        reading(readings, scope: scope, series: series)
                     }
-                    if !readings.isEmpty || !sessions.isEmpty {
-                        curve(readings: readings, typed: sessions)
-                        breaks(readings: readings, typed: sessions)
+                    if !readings.isEmpty {
+                        ProgressCurveSection(runs: readings, label: scope.label, english: series.points.last?.baseline, header: "Learning curve · \(scope.label)")
+                        ProgressBreaksSection(exposure: store.exposureSessions, series: readings, label: scope.label)
                     }
-                    if !sessions.isEmpty {
-                        typing(sessions)
-                        recent(sessions)
-                        misread
+                    if !typed.isEmpty {
+                        typingRow(typed)
                     }
 
                     RecallProgressSections(book: store.book, blocks: blocks, detail: $detail)
+
+                    SignalSection {
+                        Button { showAbout = true } label: {
+                            Label("About these numbers", systemImage: "info.circle")
+                        }
+                        .foregroundStyle(Color.Signal.accent)
+                    }
 
                     SignalSection {
                         Button(role: .destructive) { confirmReset = true } label: {
                             Text("Reset progress").font(.body).foregroundStyle(Color.Signal.red).frame(maxWidth: .infinity)
                         }
                     } footer: {
-                        Text("Removes every race and recall record for this alphabet.")
+                        Text("Removes every reading, race and recall record for this alphabet.")
                     }
                 }
                 .confirmationDialog("Reset all progress?", isPresented: $confirmReset, titleVisibility: .visible) {
                     Button("Reset progress", role: .destructive) { withAnimation { store.reset() } }
                 } message: {
-                    Text("Every race and recall record for this alphabet will be removed. This can't be undone.")
+                    Text("Every reading, race and recall record for this alphabet will be removed. This can't be undone.")
                 }
+                .sheet(isPresented: $showAbout) { AboutNumbersView() }
                 .transition(.opacity)
             }
         }
-        .animation(.default, value: sessions.isEmpty && readings.isEmpty && !hasRecall)
+        .animation(.default, value: nothing)
         .background(Color.Signal.groupedBackground)
         .sheet(item: Binding(get: { detail.map(Mark.init) }, set: { detail = $0?.text })) { m in
             RecallMarkDetail(mark: m.text, item: store.book.recall[m.text])
@@ -229,146 +252,454 @@ struct ProgressTabView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// Races or recall exist, but nothing has been read aloud yet.
+    private var readingEmpty: some View {
+        SignalSection {
+            VStack(spacing: 16) {
+                if #available(iOS 17, *) {
+                    ContentUnavailableView("No readings yet", systemImage: "waveform", description: Text("Read a passage aloud and it shows up here."))
+                } else {
+                    VStack(spacing: 8) {
+                        Image(systemName: "waveform").font(.largeTitle).foregroundStyle(.secondary)
+                        Text("No readings yet").font(.title3.weight(.semibold))
+                        Text("Read a passage aloud and it shows up here.").font(.body).foregroundStyle(.secondary)
+                    }
+                    .multilineTextAlignment(.center)
+                }
+                Button("Read") { race() }.practicePrimaryButton().controlSize(.large)
+            }
+            .frame(maxWidth: .infinity)
+            .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
+        } header: {
+            Text("Reading aloud")
+        }
+    }
+
     // MARK: Reading
 
-    /// Reading aloud: the last and best, the spoken share of English when both
-    /// tests have been taken, and the readings themselves.
-    private func reading(_ readings: [PracticeStore.Session]) -> some View {
+    /// Reading aloud, from the scoped readings: the share of English as the
+    /// hero, the ratio over time (tests) or the speed over time (all), the
+    /// newest readings, and one honest sentence about the number.
+    private func reading(_ readings: [PracticeStore.Session], scope: ReadScope, series: PracticeStore.RatioSeries) -> some View {
         let goal = store.readingGoal
-        let recent = Array(readings.suffix(60))
+        let valid = series.points.filter { $0.percent != nil }
+        let englishMissing = store.englishReadings.isEmpty
+        let age = series.englishAt.map { max(0, Int(Date().timeIntervalSince($0) / 86400)) }
+        let pool = scope == .tests ? readings + store.englishReadings : readings
+        let rows = Array(pool.sorted { $0.date < $1.date }.suffix(8).reversed())
+        let percents = Dictionary(series.points.map { ($0.id, $0.percent) }, uniquingKeysWith: { _, last in last })
         return SignalSection {
+            Picker("Runs", selection: Binding(get: { scope }, set: { scopeRaw = $0.rawValue })) {
+                Text("Tests").tag(ReadScope.tests)
+                Text("All readings").tag(ReadScope.all)
+            }
+            .pickerStyle(.segmented)
+            .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 4, trailing: 16))
+
             ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 12) { readingTiles(last: readings.last!.wpm, goal: goal) }
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) { readingTiles(last: readings.last!.wpm, goal: goal) }
+                HStack(alignment: .top, spacing: 12) { readingTiles(readings, scope: scope, goal: goal) }
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) { readingTiles(readings, scope: scope, goal: goal) }
             }
             .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
 
-            if recent.count >= 2 {
-                Chart {
-                    ForEach(Array(recent.enumerated()), id: \.element.id) { i, s in
-                        PointMark(x: .value("Reading", i), y: .value("Words per minute", s.wpm))
-                            .foregroundStyle(s.mode == "read-test" ? PracticeTheme.accent : Color.Signal.tertiaryLabel)
-                            .symbolSize(28)
-                        if recent.count >= 3 {
-                            LineMark(x: .value("Reading", i), y: .value("Words per minute", trend(recent, at: i)))
-                                .foregroundStyle(Color.Signal.label)
-                                .lineStyle(StrokeStyle(lineWidth: 2))
-                                .interpolationMethod(.monotone)
-                        }
+            if scope == .tests {
+                if valid.count >= 2 {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ratioChart(valid)
+                        ratioLegend(series.slope)
                     }
-                    if let e = goal.english {
-                        RuleMark(y: .value("English", e))
-                            .foregroundStyle(Color.Signal.secondaryLabel)
-                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                            .annotation(position: .top, alignment: .trailing) {
-                                Text("English, aloud").font(.caption2).foregroundStyle(.secondary)
-                            }
-                    }
+                    .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 12, trailing: 16))
+                } else if valid.isEmpty {
+                    Button(englishMissing ? "Take the English test" : "Take the Qiuling test", systemImage: "textformat") { readTest(englishMissing) }
+                        .foregroundStyle(Color.Signal.accent)
                 }
-                .chartXAxis(.hidden)
-                .chartYAxis {
-                    AxisMarks(position: .leading) {
-                        AxisGridLine().foregroundStyle(Color.Signal.quaternaryFill)
-                        AxisValueLabel().font(.caption2.monospacedDigit()).foregroundStyle(Color.Signal.secondaryLabel)
-                    }
-                }
-                .frame(height: 160)
-                .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
-                .accessibilityLabel("Words per minute across your last \(recent.count) readings, best \(store.bestReading)")
+            } else if readings.count >= 2 {
+                // Before the first Qiuling test the goal has no baseline yet;
+                // the English readings themselves still draw the line to reach.
+                let englishLine = goal.english ?? (store.englishReadings.isEmpty ? nil
+                    : Int(PracticeStore.median(store.englishReadings.suffix(3).map { Double($0.wpm) }).rounded()))
+                readingsChart(Array(readings.suffix(60)), english: englishLine)
             }
 
-            ForEach(readings.suffix(5).reversed()) { s in
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(s.date, format: .dateTime.month(.abbreviated).day().hour().minute()).font(.body)
-                        Text("\(s.mode == "read-test" ? "Test" : "Sentences") · \(s.words ?? 0) words · \(s.seconds) s").font(.footnote).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Text("\(s.wpm) wpm").font(.body.monospacedDigit())
+            ForEach(rows) { s in
+                readingRow(s, percent: scope == .tests ? (percents[s.id] ?? nil) : nil)
+            }
+
+            if scope == .tests, let age, age > 14 {
+                Button { readTest(true) } label: {
+                    Label("English baseline is \(age) days old — read it again", systemImage: "exclamationmark.triangle")
                 }
+                .foregroundStyle(PracticeTheme.wrong)
             }
         } header: {
             Text("Reading aloud")
         } footer: {
-            Text(goal.percent != nil
-                 ? "Red dots are tests; the dashed line is your English test speed, the line to reach. The share is your last three Qiuling tests against your last three English ones."
-                 : "Red dots are tests. Take the test in Qiuling and in English and the share of your English speed appears here — the number that matters.")
+            Text(scope == .tests
+                 ? readingNote(series, goal: goal, valid: valid, age: age)
+                 : "Every reading, tests and practice; diamonds are tests, hollow dots had no microphone. Switch to Tests for the like-for-like number.")
         }
     }
 
     @ViewBuilder
-    private func readingTiles(last: Int, goal: PracticeStore.ReadingGoal) -> some View {
-        statTile("\(last) wpm", "Last reading", spoken: "Last reading, \(last) words per minute")
-        statTile("\(store.bestReading) wpm", "Best", spoken: "Best, \(store.bestReading) words per minute")
-        statTile(goal.percent.map { "\($0)%" } ?? "—", "Of your English, aloud",
-                 spoken: goal.percent.map { "\($0) percent of your English speed, aloud" } ?? "No English baseline yet")
-    }
-
-    // MARK: Learning curve
-
-    /// Which runs the curve and the break table are drawn from. Reading aloud
-    /// is the eyes' speed and the phone's first mode, so it is the default when
-    /// there are readings; typed speed is a different scale and gets its own fit.
-    private enum CurveSource: String, CaseIterable, Identifiable {
-        case reading, typing
-        var id: String { rawValue }
-        var label: String { self == .reading ? "Reading aloud" : "Typing" }
-    }
-    @State private var curveSource: CurveSource?
-
-    /// The tests alone when there are enough to fit, since practice runs mix
-    /// passage lengths and scatter the cloud; otherwise every run in the script.
-    private func curveRuns(_ source: CurveSource, readings: [PracticeStore.Session], typed: [PracticeStore.Session]) -> [PracticeStore.Session] {
-        switch source {
-        case .reading:
-            let tests = readings.filter { $0.mode == "read-test" }
-            return tests.count >= 3 ? tests : readings
-        case .typing:
-            return typed
+    private func readingTiles(_ readings: [PracticeStore.Session], scope: ReadScope, goal: PracticeStore.ReadingGoal) -> some View {
+        let pct = goal.percent.map { "\($0)%" } ?? "—"
+        let pctSpoken = goal.percent.map { "\($0) percent of your English reading speed, aloud" } ?? "No share of English yet"
+        switch scope {
+        case .tests:
+            progressTile(pct, "of English speed, read aloud", spoken: pctSpoken, hero: true, delta: goal.delta)
+            if let last = readings.last {
+                let correct = last.listened == true
+                progressTile("\(last.wpm)", "Last test, \(correct ? "words correct/min" : "words/min")",
+                             spoken: "Last test, \(last.wpm) words\(correct ? " correct" : "") per minute")
+            }
+            progressTile(goal.misreadPercent.map { "\($0)%" } ?? "—", goal.misreadPercent == nil ? "Misread, mic off" : "Misread, mic tests",
+                         spoken: goal.misreadPercent.map { "\($0) percent misread on microphone tests" } ?? "Misread not scored, microphone off")
+        case .all:
+            let last = readings.last?.wpm ?? 0
+            let best = readings.map(\.wpm).max() ?? 0
+            progressTile("\(last) wpm", "Last reading", spoken: "Last reading, \(last) words per minute")
+            progressTile("\(best) wpm", "Best reading", spoken: "Best reading, \(best) words per minute")
+            progressTile(pct, "of English speed, tests", spoken: pctSpoken)
         }
     }
 
-    /// Every run at its cumulative minutes of exposure, both axes logarithmic,
-    /// the power-law fit through them, and the English speed as the line to
-    /// reach. Kolers' result is that this is straight; the section shows
-    /// whether yours is and where it meets English.
-    private func curve(readings: [PracticeStore.Session], typed: [PracticeStore.Session]) -> some View {
-        let source = curveSource ?? (readings.isEmpty ? .typing : .reading)
-        let runs = curveRuns(source, readings: readings, typed: typed)
-        let fit = LearningCurve.powerLaw(runs)
-        let english: Int? = source == .reading ? store.readingGoal.english : nil
-        return SignalSection {
-            if !readings.isEmpty, !typed.isEmpty {
-                Picker("Runs", selection: Binding(get: { source }, set: { curveSource = $0 })) {
-                    ForEach(CurveSource.allCases) { Text($0.label).tag($0) }
+    /// One test, one dot; the line is the trailing three-test mean and 100 is
+    /// English. Hollow dots are tests whose baseline should be read loosely.
+    private func ratioChart(_ valid: [PracticeStore.RatioPoint]) -> some View {
+        let top = Double(valid.compactMap(\.percent).max() ?? 100)
+        let last = valid.last!
+        let picked = selectedDate.flatMap { d in valid.min { abs($0.date.timeIntervalSince(d)) < abs($1.date.timeIntervalSince(d)) } }
+        let chart = Chart {
+            ForEach(valid) { p in
+                if valid.count >= 3 {
+                    LineMark(x: .value("Date", p.date), y: .value("Percent", p.trend ?? 0))
+                        .foregroundStyle(Color.Signal.label)
+                        .lineStyle(StrokeStyle(lineWidth: 2))
+                        .interpolationMethod(.monotone)
                 }
-                .pickerStyle(.segmented)
-                .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 4, trailing: 16))
+                PointMark(x: .value("Date", p.date), y: .value("Percent", p.percent ?? 0))
+                    .foregroundStyle(Color.Signal.secondaryLabel)
+                    .symbol { ChartDot(hollow: p.hollow) }
             }
-            HStack(alignment: .top, spacing: 12) {
-                statTile(store.exposureText, "Of exposure, all modes", spoken: "\(store.exposureText) of exposure in the script")
-                if let f = fit {
-                    statTile(String(format: "%.2f", f.k), "Learning exponent", spoken: String(format: "Learning exponent %.2f", f.k))
-                    statTile(String(format: "%.2f", f.r2), "r², how straight", spoken: String(format: "r squared %.2f", f.r2))
+            PointMark(x: .value("Date", last.date), y: .value("Percent", last.percent ?? 0))
+                .foregroundStyle(Color.Signal.secondaryLabel)
+                .symbol { ChartDot(hollow: last.hollow) }
+                .annotation(position: .trailing) { Text("\(last.percent ?? 0)%").font(.caption.weight(.semibold)) }
+            RuleMark(y: .value("English", 100))
+                .foregroundStyle(Color.Signal.secondaryLabel)
+                .lineStyle(StrokeStyle(lineWidth: 1))
+                .annotation(position: .top, alignment: .trailing) { Text("English · 100%").font(.caption2).foregroundStyle(.secondary) }
+            if let picked {
+                RuleMark(x: .value("Selected", picked.date))
+                    .foregroundStyle(Color.Signal.tertiaryLabel)
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+                    .annotation(position: .top) { ratioCard(picked) }
+            }
+        }
+        .chartYScale(domain: 0...max(110, top * 1.1))
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) {
+                AxisGridLine().foregroundStyle(Color.Signal.quaternaryFill)
+                AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.caption2).foregroundStyle(Color.Signal.secondaryLabel)
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading) {
+                AxisGridLine().foregroundStyle(Color.Signal.quaternaryFill)
+                AxisValueLabel().font(.caption2.monospacedDigit()).foregroundStyle(Color.Signal.secondaryLabel)
+            }
+        }
+        .chartLegend(.hidden)
+        // Room for the label beside the last point.
+        .chartPlotStyle { $0.padding(.trailing, 32) }
+        .frame(height: 160)
+        return Group {
+            if #available(iOS 17, *) {
+                chart.chartXSelection(value: $selectedDate)
+            } else {
+                chart
+            }
+        }
+        .accessibilityLabel("Share of your English reading speed, aloud, over time")
+        .accessibilityValue("Latest \(last.trend ?? 0) percent from \(valid.count) tests")
+    }
+
+    private func ratioCard(_ p: PracticeStore.RatioPoint) -> some View {
+        Text("\(p.date, format: .dateTime.month(.abbreviated).day()) · \(p.percent ?? 0)% · \(p.wpm) vs \(p.baseline ?? 0) \(p.scored ? "wcpm" : "wpm") · baseline \(p.baselineN), \(p.ageDays) d")
+            .font(.caption2).foregroundStyle(Color.Signal.label)
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(Color.Signal.groupedBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    private func ratioLegend(_ slope: Double?) -> some View {
+        let slopeText = slope.map { "\($0 >= 0 ? "+" : "−")\(String(format: "%.1f", abs($0))) pts a week" } ?? "slope after 4 tests over 2 weeks"
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) { legendItems(slopeText) }
+            VStack(alignment: .leading, spacing: 4) { legendItems(slopeText) }
+        }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private func legendItems(_ slopeText: String) -> some View {
+        HStack(spacing: 5) {
+            RoundedRectangle(cornerRadius: 1.5).fill(Color.Signal.label).frame(width: 14, height: 3)
+            Text("3-test average · \(slopeText)")
+        }
+        HStack(spacing: 5) {
+            Circle().fill(Color.Signal.secondaryLabel).frame(width: 8, height: 8)
+            Text("each test")
+        }
+        HStack(spacing: 5) {
+            Circle().strokeBorder(Color.Signal.secondaryLabel, lineWidth: 1.5).frame(width: 8, height: 8)
+            Text("stale baseline, mic mismatch or English read later")
+        }
+    }
+
+    /// Every reading, by date: diamonds are tests, hollow dots had no
+    /// microphone, and the line is the centred nine-reading mean.
+    private func readingsChart(_ recent: [PracticeStore.Session], english: Int?) -> some View {
+        let best = recent.map(\.wpm).max() ?? 0
+        let bestIndex = recent.firstIndex { $0.wpm == best }
+        return Chart {
+            ForEach(Array(recent.enumerated()), id: \.element.id) { i, s in
+                PointMark(x: .value("Date", s.date), y: .value("Words per minute", s.wpm))
+                    .foregroundStyle(Color.Signal.secondaryLabel)
+                    .symbol { ChartDot(diamond: s.mode == "read-test", hollow: s.listened == false) }
+                if recent.count >= 5 {
+                    LineMark(x: .value("Date", s.date), y: .value("Words per minute", centredTrend(recent, at: i)))
+                        .foregroundStyle(Color.Signal.label)
+                        .lineStyle(StrokeStyle(lineWidth: 2))
+                        .interpolationMethod(.monotone)
                 }
+            }
+            if let bestIndex {
+                let b = recent[bestIndex]
+                PointMark(x: .value("Date", b.date), y: .value("Words per minute", b.wpm))
+                    .foregroundStyle(Color.Signal.secondaryLabel)
+                    .symbol { ChartDot(diamond: b.mode == "read-test", hollow: b.listened == false) }
+                    .annotation(position: .top) { Text("best").font(.caption2).foregroundStyle(.secondary) }
+            }
+            if let e = english {
+                RuleMark(y: .value("English", e))
+                    .foregroundStyle(Color.Signal.secondaryLabel)
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+                    .annotation(position: .top, alignment: .trailing) { Text("English · \(e)").font(.caption2).foregroundStyle(.secondary) }
+            }
+        }
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) {
+                AxisGridLine().foregroundStyle(Color.Signal.quaternaryFill)
+                AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.caption2).foregroundStyle(Color.Signal.secondaryLabel)
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading) {
+                AxisGridLine().foregroundStyle(Color.Signal.quaternaryFill)
+                AxisValueLabel().font(.caption2.monospacedDigit()).foregroundStyle(Color.Signal.secondaryLabel)
+            }
+        }
+        .chartLegend(.hidden)
+        .frame(height: 160)
+        .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
+        .accessibilityLabel("Words per minute across your last \(recent.count) readings, best \(best)")
+    }
+
+    private func readingRow(_ s: PracticeStore.Session, percent: Int?) -> some View {
+        let kind = s.mode == "read-test" ? "Test" : s.mode == "read-english" ? "English test" : "Passage"
+        var note = [String]()
+        if s.listened == true { note.append("\(100 - s.accuracy)% misread") } else if s.listened == false { note.append("mic off") }
+        if let percent { note.append("\(percent)% of English") }
+        return HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(s.date, format: .dateTime.month(.abbreviated).day().hour().minute()).font(.body)
+                Text("\(kind) · \(s.words ?? 0) words · \(PracticeFormat.duration(s.seconds))").font(.footnote).foregroundStyle(.secondary)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("\(s.wpm) \(s.listened == true ? "wcpm" : "wpm")").font(.body.monospacedDigit())
+                if !note.isEmpty {
+                    Text(note.joined(separator: " · ")).font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    /// The footer under Reading aloud, first match wins: what to do next while
+    /// the number cannot be computed, then the number and how far to trust it.
+    private func readingNote(_ series: PracticeStore.RatioSeries, goal: PracticeStore.ReadingGoal, valid: [PracticeStore.RatioPoint], age: Int?) -> String {
+        let english = store.englishReadings
+        let last = valid.last
+        let unit = (last?.scored ?? false) ? "words correct a minute" : "words a minute"
+        let n = min(3, valid.count)
+        let q = goal.qiuling ?? 0, e = goal.english ?? 0
+        var note: String
+        if series.tests == 0, english.isEmpty {
+            note = "Read the test aloud once in Qiuling and once in English, and this becomes one number to move."
+        } else if english.isEmpty {
+            note = "Read the test aloud once in English for your baseline — the share appears here."
+        } else if series.tests == 0 {
+            let baseline = Int(PracticeStore.median(english.suffix(3).map { Double($0.wpm) }).rounded())
+            note = "Now read the test aloud in Qiuling; your English baseline is \(baseline) \(unit)."
+        } else if let pct = goal.percent, valid.count == 1 {
+            note = "One test so far: \(pct)% of your English speed (\(q) vs \(e) \(unit)). The line starts at two."
+        } else if let pct = goal.percent, pct >= 100 {
+            note = "You read Qiuling aloud as fast as English: \(pct)% (\(q) vs \(e) \(unit), last \(n) tests). The daily-driver line."
+        } else if let pct = goal.percent, let age, age > 14 {
+            note = "Your English read-aloud test is \(age) days old — redo it so the share stays honest. Until then: \(pct)% on a stale baseline."
+        } else if let pct = goal.percent, n < 3 || goal.baselineN < 3 {
+            note = "\(pct)% of your English speed aloud, from \(n) of 3 tests against \(goal.baselineN) of 3 English readings — provisional until the third."
+        } else if let pct = goal.percent {
+            note = "Your last three read-aloud tests against your nearest English ones: \(pct)% (\(q) vs \(e) \(unit))"
+            if let d = goal.delta { note += ", \(d >= 0 ? "+" : "−")\(abs(d)) points since the test before" }
+            note += "."
+            if let s = series.slope, let first = valid.first, let last {
+                let weeks = max(1, Int((last.date.timeIntervalSince(first.date) / 604_800).rounded()))
+                note += " \(s >= 0 ? "+" : "−")\(String(format: "%.1f", abs(s))) points a week over \(weeks) weeks."
+            } else {
+                note += " A trend appears after 4 tests over 2 weeks."
+            }
+            note += " A speed ratio, not comprehension: it says how fast you decode, not how much you took in."
+        } else {
+            note = "Read the test aloud once in Qiuling and once in English, and this becomes one number to move."
+        }
+        if last?.mixed == true {
+            note += " Some of these were read without a microphone, so this is words read, not words correct."
+        }
+        if last != nil, let age {
+            let mic = series.points.last?.listened == false ? " · mic off on the last test" : ""
+            note += " English baseline · \(age) d old · \(goal.baselineN) of 3 readings\(mic)."
+        }
+        return note
+    }
+
+    // MARK: Typing
+
+    private func typingRow(_ typed: [PracticeStore.Session]) -> some View {
+        SignalSection {
+            Button { typing() } label: {
+                HStack {
+                    Text("Typing").foregroundStyle(Color.Signal.label)
+                    Spacer()
+                    Text("\(store.best) wpm best · \(typed.count) race\(typed.count == 1 ? "" : "s")").foregroundStyle(Color.Signal.secondaryLabel)
+                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.Signal.tertiaryLabel)
+                }
+            }
+        } footer: {
+            Text("Typed races, accuracy and the marks you mistype.")
+        }
+    }
+}
+
+// MARK: - Shared pieces
+
+/// A number with its caption. The hero is the one figure the tab is for and
+/// takes the large title; a delta beside it says which way the last test moved.
+@available(iOS 16, *)
+private func progressTile(_ value: String, _ caption: String, spoken: String, hero: Bool = false, delta: Int? = nil) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(value).font(.system(hero ? .largeTitle : .title, design: .rounded, weight: .semibold))
+            if let delta {
+                Text(delta >= 0 ? "+\(delta)" : "−\(-delta)")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(delta >= 0 ? PracticeTheme.good : PracticeTheme.wrong)
+            }
+        }
+        Text(caption).font(.footnote).foregroundStyle(.secondary)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(spoken + (delta.map { ", \($0 >= 0 ? "up" : "down") \(abs($0)) points since the test before" } ?? ""))
+}
+
+/// A chart marker: a circle, or a diamond for a test; hollow when the point
+/// should be read loosely. A symbol view does not take the mark's foreground
+/// style, so the colour is its own.
+@available(iOS 16, *)
+private struct ChartDot: View {
+    var diamond = false
+    var hollow = false
+    var color = Color.Signal.secondaryLabel
+
+    var body: some View {
+        if diamond {
+            if hollow {
+                Rectangle().rotation(.degrees(45)).strokeBorder(color, lineWidth: 1.5).frame(width: 7, height: 7)
+            } else {
+                Rectangle().rotation(.degrees(45)).fill(color).frame(width: 7, height: 7)
+            }
+        } else {
+            if hollow {
+                Circle().strokeBorder(color, lineWidth: 1.5).frame(width: 9, height: 9)
+            } else {
+                Circle().fill(color).frame(width: 9, height: 9)
+            }
+        }
+    }
+}
+
+/// A centred nine-run average, so the line says where you are going rather
+/// than how the last run went.
+private func centredTrend(_ s: [PracticeStore.Session], at i: Int) -> Double {
+    let lo = max(0, i - 4), hi = min(s.count - 1, i + 4)
+    let w = s[lo...hi].map(\.wpm); return Double(w.reduce(0, +)) / Double(w.count)
+}
+
+// MARK: - Learning curve
+
+/// Every run at its cumulative minutes of exposure, both axes logarithmic,
+/// the power-law fit through them, and the English speed as the line to
+/// reach. Kolers' result is that this is straight; the section shows whether
+/// yours is and where it meets English.
+@available(iOS 16, *)
+private struct ProgressCurveSection: View {
+    let runs: [PracticeStore.Session]
+    /// The noun in the copy: "tests", "all readings" or "races".
+    let label: String
+    let english: Int?
+    let header: String
+    @ObservedObject private var store = PracticeStore.shared
+
+    var body: some View {
+        let fit = LearningCurve.powerLaw(runs)
+        SignalSection {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 12) { tiles(fit) }
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) { tiles(fit) }
             }
             .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
 
             if let f = fit {
-                curveChart(f, english: english)
+                if f.r2 < 0.3 || f.points.count < 5 {
+                    Label("Too few or too scattered points to trust the line yet", systemImage: "exclamationmark.triangle")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                chart(f)
                     .frame(height: 180)
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 16, trailing: 16))
-                    .accessibilityLabel(curveVerdict(f, english: english))
+                    .accessibilityLabel(verdict(f))
             }
         } header: {
-            Text("Learning curve")
+            Text(header)
         } footer: {
-            Text(fit.map { curveVerdict($0, english: english) }
-                 ?? "After three runs a line is fitted through your speed against cumulative practice, both on log scales. Kolers (1975) found that line is straight for a new typography, and that readers neared normal speed inside about 160 pages.")
+            Text(fit.map(verdict) ?? "After three \(label) a line is fitted through your speed against cumulative practice, both on log scales.")
         }
     }
 
-    private func curveChart(_ f: LearningCurve.Fit, english: Int?) -> some View {
+    @ViewBuilder
+    private func tiles(_ f: LearningCurve.Fit?) -> some View {
+        progressTile(store.exposureText, "Practice so far, all modes", spoken: "\(store.exposureText) of practice so far, all modes")
+        if let f {
+            let tenfold = String(format: "%+d%%", Int(((pow(10, f.k) - 1) * 100).rounded()))
+            let quality = f.r2 < 0.3 ? "loose" : f.r2 < 0.6 ? "fair" : "tight"
+            progressTile(tenfold, "Speed per 10× practice", spoken: "\(tenfold) speed per tenfold practice")
+            progressTile(quality, "Fit", spoken: "Fit \(quality)")
+        }
+    }
+
+    private func chart(_ f: LearningCurve.Fit) -> some View {
         let xs = f.points.map(\.minutes), ys = f.points.map { Double($0.wpm) }
         let xLo = xs.min()! / 1.15, xHi = xs.max()! * 1.15
         let reach = english.flatMap { f.minutesTo($0) }
@@ -381,12 +712,14 @@ struct ProgressTabView: View {
             .map { exp($0) }
         // Minutes below the hour, whole hours above it, so the labels read as
         // "20m … 2h … 10h" rather than as fractions of an hour.
-        let xTicks = ([1.0, 2, 5, 10, 20, 30] + [1.0, 2, 5, 10, 20, 50, 100, 200].map { $0 * 60 }).filter { $0 >= xLo && $0 <= xTop }
+        // A tick in the last few percent of a log axis has no room for its
+        // label and shows as "1…"; leave that edge bare.
+        let xTicks = ([1.0, 2, 5, 10, 20, 30] + [1.0, 2, 5, 10, 20, 50, 100, 200].map { $0 * 60 }).filter { $0 >= xLo && $0 <= xTop / 1.08 }
         return Chart {
             ForEach(f.points) { p in
                 PointMark(x: .value("Minutes", p.minutes), y: .value("Words per minute", p.wpm))
-                    .foregroundStyle(Color.Signal.tertiaryLabel)
-                    .symbolSize(28)
+                    .foregroundStyle(Color.Signal.secondaryLabel)
+                    .symbolSize(64)
             }
             ForEach(Array(samples.enumerated()), id: \.offset) { _, m in
                 LineMark(x: .value("Minutes", m), y: .value("Fit", f.predict(m)), series: .value("Line", m <= xs.max()! * 1.0001 ? "fit" : "forecast"))
@@ -396,9 +729,9 @@ struct ProgressTabView: View {
             if let e = english {
                 RuleMark(y: .value("English", e))
                     .foregroundStyle(Color.Signal.secondaryLabel)
-                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    .lineStyle(StrokeStyle(lineWidth: 1))
                     .annotation(position: .top, alignment: .trailing) {
-                        Text("English \(e)").font(.caption2).foregroundStyle(.secondary)
+                        Text("English · \(e)").font(.caption2).foregroundStyle(.secondary)
                     }
             }
         }
@@ -423,33 +756,39 @@ struct ProgressTabView: View {
         .chartLegend(.hidden)
     }
 
-    private func curveVerdict(_ f: LearningCurve.Fit, english: Int?) -> String {
-        let total = LearningCurve.minutes(f.points.map(\.minutes).max()!)
+    /// One sentence on what the line says.
+    private func verdict(_ f: LearningCurve.Fit) -> String {
+        let most = f.points.map(\.minutes).max()!
         let tenfold = Int(((pow(10, f.k) - 1) * 100).rounded())
-        let loose = f.r2 < 0.3 ? "The points barely fit a line yet (r² under 0.3), so read this loosely. " : ""
         if f.k <= 0.01 {
-            return loose + "The line is flat: over \(total) of exposure these runs are not getting faster. Change what you practise before adding more of it."
+            return "Over \(LearningCurve.minutes(most)) of exposure these \(label) are not getting faster — change what you practise before adding more of it."
         }
         guard let e = english else {
-            return loose + String(format: "Speed is rising as the %.2f power of practice — tenfold the practice, %d%% more speed. Take the English test and this will say when the line meets it.", f.k, tenfold)
+            return label == "races"
+                ? "Ten times the practice buys about \(tenfold)% more speed on this line."
+                : "Ten times the practice buys about \(tenfold)% more speed on this line; take the English test aloud and it will say when the line meets it."
         }
-        guard let reach = f.minutesTo(e), reach > f.points.map(\.minutes).max()! else {
-            return loose + "The fitted line is already at or past your English speed of \(e) wpm."
+        guard let reach = f.minutesTo(e), reach > most else {
+            return "The fitted line is already at or past your English speed of \(e) words correct a minute."
         }
-        return loose + String(format: "Speed is rising as the %.2f power of practice: tenfold the practice, %d%% more speed. Extended, the line meets your English speed of %d wpm at about %@ of exposure — %@ from here. Kolers' students, reading upside-down text, neared normal speed within about 160 pages.",
-                              f.k, tenfold, e, LearningCurve.minutes(reach), LearningCurve.minutes(reach - f.points.map(\.minutes).max()!))
+        return "Ten times the practice buys about \(tenfold)% more speed; extended, the line meets your English speed of \(e) at about \(LearningCurve.minutes(reach)) of exposure — \(LearningCurve.minutes(reach - most)) from here."
     }
+}
 
-    // MARK: Breaks
+// MARK: - After a break
 
-    /// What each break of two days or more cost: the first run back and the
-    /// three after it, against the three before.
-    private func breaks(readings: [PracticeStore.Session], typed: [PracticeStore.Session]) -> some View {
-        let source = curveSource ?? (readings.isEmpty ? .typing : .reading)
-        let runs = curveRuns(source, readings: readings, typed: typed)
-        let rows = LearningCurve.breaks(runs)
-        let since = runs.last.map { Int(Date().timeIntervalSince($0.date) / 86400) } ?? 0
-        return SignalSection {
+/// What each break of two days or more in practice cost, scored on the
+/// series: the first back and the three after it, against the three before.
+@available(iOS 16, *)
+private struct ProgressBreaksSection: View {
+    let exposure: [PracticeStore.Session]
+    let series: [PracticeStore.Session]
+    let label: String
+
+    var body: some View {
+        let rows = LearningCurve.breaks(exposure: exposure, series: series)
+        let since = exposure.last.map { Int(Date().timeIntervalSince($0.date) / 86400) } ?? 0
+        SignalSection {
             if rows.isEmpty {
                 Text(since >= 2
                      ? "No break of two days or more yet — the current one is \(since) days, so your next run is the first row here."
@@ -460,7 +799,7 @@ struct ProgressTabView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(b.date, format: .dateTime.month(.abbreviated).day()).font(.body)
-                            Text("\(b.days) days away · \(b.before) wpm before").font(.footnote).foregroundStyle(.secondary)
+                            Text("\(b.days) days away · \(b.before) wpm before").font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 2) {
@@ -477,16 +816,41 @@ struct ProgressTabView: View {
             Text("After a break")
         } footer: {
             if rows.isEmpty {
-                Text("Kolers' readers kept their skill across a year away; Potter could not read her own cipher after decades. Every gap of two days or more will show here as the first run back against the three before it.")
+                Text("Gaps of two days or more anywhere in your practice will show here, scored with your \(label): the first back against the three before.")
             } else {
-                let avg = rows.map(\.firstPercent).reduce(0, +) / rows.count
-                let longest = rows.max { $0.days < $1.days }!
-                Text("Over \(rows.count) break\(rows.count == 1 ? "" : "s") of two days or more, the first run back averaged \(avg)% of the speed before it; the longest, \(longest.days) days, came back at \(longest.firstPercent)%. Near 100% on the first run means the marks are in long-term memory, not this week's warm-up." + (since >= 2 ? " You are \(since) days into a break now." : ""))
+                let avg = Int((Double(rows.map(\.firstPercent).reduce(0, +)) / Double(rows.count)).rounded())
+                Text("Gaps of two days or more anywhere in your practice, scored with your \(label): the first back averaged \(avg)% of the speed before.")
             }
         }
     }
+}
 
-    // MARK: Typing
+// MARK: - Typing progress
+
+/// The typed race's numbers, pushed from the Typing row: a different scale
+/// from reading aloud, so it never shares a chart with it.
+@available(iOS 16, *)
+struct TypingProgressView: View {
+    @ObservedObject private var store = PracticeStore.shared
+    @ScaledMetric(relativeTo: .title) private var rowGlyph: CGFloat = 30
+
+    var body: some View {
+        let typed = store.typedSessions
+        SignalList {
+            if typed.isEmpty {
+                SignalSection {
+                    Text("No races yet.").font(.subheadline).foregroundStyle(.secondary)
+                }
+            } else {
+                typing(typed)
+                recent(typed)
+                misread
+                ProgressCurveSection(runs: typed, label: "races", english: nil, header: "Learning curve · races")
+                ProgressBreaksSection(exposure: store.exposureSessions, series: typed, label: "races")
+            }
+        }
+        .background(Color.Signal.groupedBackground)
+    }
 
     private func typing(_ sessions: [PracticeStore.Session]) -> some View {
         let last = sessions.last!
@@ -502,10 +866,10 @@ struct ProgressTabView: View {
             Chart {
                 ForEach(Array(recent.enumerated()), id: \.element.id) { i, s in
                     PointMark(x: .value("Race", i), y: .value("Words per minute", s.wpm))
-                        .foregroundStyle(s.wpm >= store.best ? PracticeTheme.good : Color.Signal.tertiaryLabel)
-                        .symbolSize(28)
+                        .foregroundStyle(s.wpm >= store.best ? PracticeTheme.good : Color.Signal.secondaryLabel)
+                        .symbolSize(64)
                     if recent.count >= 3 {
-                        LineMark(x: .value("Race", i), y: .value("Words per minute", trend(recent, at: i)))
+                        LineMark(x: .value("Race", i), y: .value("Words per minute", centredTrend(recent, at: i)))
                             .foregroundStyle(Color.Signal.label)
                             .lineStyle(StrokeStyle(lineWidth: 2))
                             .interpolationMethod(.monotone)
@@ -531,26 +895,9 @@ struct ProgressTabView: View {
 
     @ViewBuilder
     private func typingTiles(last: Int, accuracy: Int) -> some View {
-        statTile("\(last) wpm", "Last race", spoken: "Last race, \(last) words per minute")
-        statTile("\(store.best) wpm", "Best", spoken: "Best, \(store.best) words per minute")
-        statTile("\(accuracy)%", "Accuracy", spoken: "Accuracy, \(accuracy) percent")
-    }
-
-    private func statTile(_ value: String, _ caption: String, spoken: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value).font(.system(.title, design: .rounded, weight: .semibold)).monospacedDigit()
-            Text(caption).font(.footnote).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(spoken)
-    }
-
-    /// A centred nine-race average, so the line says where you are going
-    /// rather than how the last race went.
-    private func trend(_ s: [PracticeStore.Session], at i: Int) -> Double {
-        let lo = max(0, i - 4), hi = min(s.count - 1, i + 4)
-        let w = s[lo...hi].map(\.wpm); return Double(w.reduce(0, +)) / Double(w.count)
+        progressTile("\(last) wpm", "Last race", spoken: "Last race, \(last) words per minute")
+        progressTile("\(store.best) wpm", "Best", spoken: "Best, \(store.best) words per minute")
+        progressTile("\(accuracy)%", "Accuracy", spoken: "Accuracy, \(accuracy) percent")
     }
 
     private func recent(_ sessions: [PracticeStore.Session]) -> some View {
@@ -569,7 +916,7 @@ struct ProgressTabView: View {
                 }
             }
         } header: {
-            Text("Recent races")
+            Text("Recent typing")
         }
     }
 
@@ -586,11 +933,52 @@ struct ProgressTabView: View {
                         Text("\(m.record.wrong) of \(m.record.seen) times").font(.subheadline.monospacedDigit()).foregroundStyle(PracticeTheme.wrong)
                     }
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(PracticeFormat.spelled(m.text)), misread \(m.record.wrong) of \(m.record.seen) times")
+                    .accessibilityLabel("\(PracticeFormat.spelled(m.text)), mistyped \(m.record.wrong) of \(m.record.seen) times")
                 }
             } header: {
-                Text("Often misread")
+                Text("Often mistyped")
             }
+        }
+    }
+}
+
+// MARK: - About these numbers
+
+/// The research behind the tab, in one sheet, so the live surfaces can stay
+/// at a sentence or two each.
+@available(iOS 16, *)
+struct AboutNumbersView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            SignalList(presented: true) {
+                section("% of English speed",
+                        "Words correct per minute reading a Qiuling passage aloud, divided by the median of your last three English readings; 100 is reading Qiuling as fast as English. A speed ratio, not comprehension. Your voice is in both, so what is left is the script. The English readings used are the nearest before the test (or in the same sitting after it), within two weeks; hollow dots are tests whose baseline was older than that, taken with a different microphone setting, or read only afterwards — read those loosely. Typing caps out far below reading speed, so the typed test can never show more than your hands allow; reading aloud is how reading research measures fluency, and speech runs at 150–200 words a minute.")
+                section("Two tests, two jobs",
+                        "The spoken test is one real passage of about 60 words, timed by you, because reading aloud is how reading research measures fluency. The typed test is 60 seconds of the same 1,500 common words in random order, so English cannot guess the marks for you — the stricter check on the eyes alone, and your fingers are in both so typing skill cancels. Both are the same size every time, so the only thing that can move the number is you.")
+                section("Misread %",
+                        "Speed bought with misreadings is skimming, not reading: hold the test under 2% misread before pushing for speed. Without a microphone misreadings are not counted, so those runs show blank here, not 0.")
+                section("The learning curve",
+                        "In a 1975 study, students reading up to 160 pages of upside-down text got faster as a power of pages read — a straight line on log axes — and neared normal speed inside those pages. Here your speed is fitted as a power of the minutes you have practised; the fit quality says how straight your line is.")
+                section("After a break",
+                        "In a 1976 study, readers of upside-down text kept their skill across a year away; Beatrix Potter, who wrote a private cipher fluently for sixteen years, could not read it back after decades. Every gap of two days or more in your practice is a row in After a break: the first run back as a share of the three before. Near 100% means the marks live in long-term memory; a dip the next three recover is warm-up; a dip that stays is forgetting.")
+                section("Weather and climate",
+                        "A run is weather, the line is climate: judge by the 3-test average and by the test, never by one good run.")
+            }
+            .navigationTitle("About these numbers")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+        }
+    }
+
+    private func section(_ title: String, _ text: String) -> some View {
+        SignalSection {
+            Text(text).font(.body)
+        } header: {
+            Text(title)
         }
     }
 }
