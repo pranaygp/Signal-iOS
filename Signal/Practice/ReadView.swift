@@ -494,10 +494,18 @@ struct ReadView: View {
             if model.scoring {
                 HStack(spacing: 8) { ProgressView(); Text("Scoring…").font(.footnote).foregroundStyle(.secondary) }
             } else if model.isRunning {
-                Button("Done", systemImage: "checkmark") { model.done() }
-                    .practicePrimaryButton()
-                    .controlSize(.large)
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: 12) {
+                    // A run interrupted is not a run: Discard keeps nothing
+                    // and brings up a fresh passage, hidden, ready to tap.
+                    Button("Discard", systemImage: "xmark") { model.start() }
+                        .practiceSecondaryButton()
+                        .controlSize(.large)
+                        .accessibilityHint("Throws this run away without saving it and brings up a new passage.")
+                    Button("Done", systemImage: "checkmark") { model.done() }
+                        .practicePrimaryButton()
+                        .controlSize(.large)
+                }
+                .frame(maxWidth: .infinity)
                 if let note = model.microphoneNote {
                     Text(note).font(.footnote).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16)
                 }
@@ -514,7 +522,7 @@ struct ReadView: View {
         let what = model.isTest
             ? "The test: about \(ReadModel.testWords) words of one excerpt, in \(model.script.label). Take it in both scripts to compare."
             : "About \(model.words) words of one excerpt."
-        return what + " Tap the passage to reveal it and start the clock; read it aloud; tap Done." +
+        return what + " Tap the passage to reveal it and start the clock; read it aloud; tap Done. Interrupted? Discard keeps nothing." +
             (model.microphone ? " The microphone marks the words you misread." : "")
     }
 }
@@ -567,7 +575,11 @@ struct ReadPassageView: View {
             }
             if let frontier, i == frontier { run.backgroundColor = PracticeTheme.tint }
             out += run
-            out += AttributedString(" ")
+            // The space in the script's own font: the drawn word gap, not the
+            // system face's, which is a sliver beside 40-point marks.
+            var gap = AttributedString(" ")
+            gap.font = PracticeTheme.script(scriptSize)
+            out += gap
         }
         return out
     }
