@@ -336,7 +336,7 @@ struct ProgressTabView: View {
         } footer: {
             Text(scope == .tests
                  ? readingNote(series, goal: goal, valid: valid, age: age)
-                 : "Every reading, tests and practice; diamonds are tests, hollow dots had no microphone. Switch to Tests for the like-for-like number.")
+                 : "Every reading, tests and practice; diamonds are tests\(PracticeFeatures.microphone ? ", hollow dots had no microphone" : ""). Switch to Tests for the like-for-like number.")
         }
     }
 
@@ -348,12 +348,14 @@ struct ProgressTabView: View {
         case .tests:
             progressTile(pct, "of English speed, read aloud", spoken: pctSpoken, hero: true, delta: goal.delta)
             if let last = readings.last {
-                let correct = last.listened == true
+                let correct = PracticeFeatures.microphone && last.listened == true
                 progressTile("\(last.wpm)", "Last test, \(correct ? "words correct/min" : "words/min")",
                              spoken: "Last test, \(last.wpm) words\(correct ? " correct" : "") per minute")
             }
-            progressTile(goal.misreadPercent.map { "\($0)%" } ?? "—", goal.misreadPercent == nil ? "Misread, mic off" : "Misread, mic tests",
-                         spoken: goal.misreadPercent.map { "\($0) percent misread on microphone tests" } ?? "Misread not scored, microphone off")
+            if PracticeFeatures.microphone {
+                progressTile(goal.misreadPercent.map { "\($0)%" } ?? "—", goal.misreadPercent == nil ? "Misread, mic off" : "Misread, mic tests",
+                             spoken: goal.misreadPercent.map { "\($0) percent misread on microphone tests" } ?? "Misread not scored, microphone off")
+            }
         case .all:
             let last = readings.last?.wpm ?? 0
             let best = readings.map(\.wpm).max() ?? 0
@@ -425,7 +427,7 @@ struct ProgressTabView: View {
     }
 
     private func ratioCard(_ p: PracticeStore.RatioPoint) -> some View {
-        Text("\(p.date, format: .dateTime.month(.abbreviated).day()) · \(p.percent ?? 0)% · \(p.wpm) vs \(p.baseline ?? 0) \(p.scored ? "wcpm" : "wpm") · baseline \(p.baselineN), \(p.ageDays) d")
+        Text("\(p.date, format: .dateTime.month(.abbreviated).day()) · \(p.percent ?? 0)% · \(p.wpm) vs \(p.baseline ?? 0) \(PracticeFeatures.microphone && p.scored ? "wcpm" : "wpm") · baseline \(p.baselineN), \(p.ageDays) d")
             .font(.caption2).foregroundStyle(Color.Signal.label)
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(Color.Signal.groupedBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -453,7 +455,7 @@ struct ProgressTabView: View {
         }
         HStack(spacing: 5) {
             Circle().strokeBorder(Color.Signal.secondaryLabel, lineWidth: 1.5).frame(width: 8, height: 8)
-            Text("stale baseline, mic mismatch or English read later")
+            Text(PracticeFeatures.microphone ? "stale baseline, mic mismatch or English read later" : "stale baseline, or English read later")
         }
     }
 
@@ -466,7 +468,7 @@ struct ProgressTabView: View {
             ForEach(Array(recent.enumerated()), id: \.element.id) { i, s in
                 PointMark(x: .value("Date", s.date), y: .value("Words per minute", s.wpm))
                     .foregroundStyle(Color.Signal.secondaryLabel)
-                    .symbol { ChartDot(diamond: s.mode == "read-test", hollow: s.listened == false) }
+                    .symbol { ChartDot(diamond: s.mode == "read-test", hollow: PracticeFeatures.microphone && s.listened == false) }
                 if recent.count >= 5 {
                     LineMark(x: .value("Date", s.date), y: .value("Words per minute", centredTrend(recent, at: i)))
                         .foregroundStyle(Color.Signal.label)
@@ -478,7 +480,7 @@ struct ProgressTabView: View {
                 let b = recent[bestIndex]
                 PointMark(x: .value("Date", b.date), y: .value("Words per minute", b.wpm))
                     .foregroundStyle(Color.Signal.secondaryLabel)
-                    .symbol { ChartDot(diamond: b.mode == "read-test", hollow: b.listened == false) }
+                    .symbol { ChartDot(diamond: b.mode == "read-test", hollow: PracticeFeatures.microphone && b.listened == false) }
                     .annotation(position: .top) { Text("best").font(.caption2).foregroundStyle(.secondary) }
             }
             if let e = english {
@@ -509,7 +511,9 @@ struct ProgressTabView: View {
     private func readingRow(_ s: PracticeStore.Session, percent: Int?) -> some View {
         let kind = s.mode == "read-test" ? "Test" : s.mode == "read-english" ? "English test" : "Passage"
         var note = [String]()
-        if s.listened == true { note.append("\(100 - s.accuracy)% misread") } else if s.listened == false { note.append("mic off") }
+        if PracticeFeatures.microphone {
+            if s.listened == true { note.append("\(100 - s.accuracy)% misread") } else if s.listened == false { note.append("mic off") }
+        }
         if let percent { note.append("\(percent)% of English") }
         return HStack {
             VStack(alignment: .leading, spacing: 2) {
@@ -518,7 +522,7 @@ struct ProgressTabView: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
-                Text("\(s.wpm) \(s.listened == true ? "wcpm" : "wpm")").font(.body.monospacedDigit())
+                Text("\(s.wpm) \(PracticeFeatures.microphone && s.listened == true ? "wcpm" : "wpm")").font(.body.monospacedDigit())
                 if !note.isEmpty {
                     Text(note.joined(separator: " · ")).font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
                 }
@@ -531,7 +535,7 @@ struct ProgressTabView: View {
     private func readingNote(_ series: PracticeStore.RatioSeries, goal: PracticeStore.ReadingGoal, valid: [PracticeStore.RatioPoint], age: Int?) -> String {
         let english = store.englishReadings
         let last = valid.last
-        let unit = (last?.scored ?? false) ? "words correct a minute" : "words a minute"
+        let unit = PracticeFeatures.microphone && (last?.scored ?? false) ? "words correct a minute" : "words a minute"
         let n = min(3, valid.count)
         let q = goal.qiuling ?? 0, e = goal.english ?? 0
         var note: String
@@ -564,11 +568,11 @@ struct ProgressTabView: View {
         } else {
             note = "Read the test aloud once in Qiuling and once in English, and this becomes one number to move."
         }
-        if last?.mixed == true {
+        if PracticeFeatures.microphone, last?.mixed == true {
             note += " Some of these were read without a microphone, so this is words read, not words correct."
         }
         if last != nil, let age {
-            let mic = series.points.last?.listened == false ? " · mic off on the last test" : ""
+            let mic = PracticeFeatures.microphone && series.points.last?.listened == false ? " · mic off on the last test" : ""
             note += " English baseline · \(age) d old · \(goal.baselineN) of 3 readings\(mic)."
         }
         return note
@@ -769,7 +773,7 @@ private struct ProgressCurveSection: View {
                 : "Ten times the practice buys about \(tenfold)% more speed on this line; take the English test aloud and it will say when the line meets it."
         }
         guard let reach = f.minutesTo(e), reach > most else {
-            return "The fitted line is already at or past your English speed of \(e) words correct a minute."
+            return "The fitted line is already at or past your English speed of \(e) words a minute."
         }
         return "Ten times the practice buys about \(tenfold)% more speed; extended, the line meets your English speed of \(e) at about \(LearningCurve.minutes(reach)) of exposure — \(LearningCurve.minutes(reach - most)) from here."
     }
@@ -954,11 +958,13 @@ struct AboutNumbersView: View {
         NavigationStack {
             SignalList(presented: true) {
                 section("% of English speed",
-                        "Words correct per minute reading a Qiuling passage aloud, divided by the median of your last three English readings; 100 is reading Qiuling as fast as English. A speed ratio, not comprehension. Your voice is in both, so what is left is the script. The English readings used are the nearest before the test (or in the same sitting after it), within two weeks; hollow dots are tests whose baseline was older than that, taken with a different microphone setting, or read only afterwards — read those loosely. Typing caps out far below reading speed, so the typed test can never show more than your hands allow; reading aloud is how reading research measures fluency, and speech runs at 150–200 words a minute.")
+                        "Words per minute reading a Qiuling passage aloud, divided by the median of your last three English readings; 100 is reading Qiuling as fast as English. A speed ratio, not comprehension. Your voice is in both, so what is left is the script. The English readings used are the nearest before the test (or in the same sitting after it), within two weeks; hollow dots are tests whose baseline was older than that or read only afterwards — read those loosely. Typing caps out far below reading speed, so the typed test can never show more than your hands allow; reading aloud is how reading research measures fluency, and speech runs at 150–200 words a minute.")
                 section("Two tests, two jobs",
                         "The spoken test is one real passage of about 60 words, timed by you, because reading aloud is how reading research measures fluency. The typed test is 60 seconds of the same 1,500 common words in random order, so English cannot guess the marks for you — the stricter check on the eyes alone, and your fingers are in both so typing skill cancels. Both are the same size every time, so the only thing that can move the number is you.")
-                section("Misread %",
-                        "Speed bought with misreadings is skimming, not reading: hold the test under 2% misread before pushing for speed. Without a microphone misreadings are not counted, so those runs show blank here, not 0.")
+                if PracticeFeatures.microphone {
+                    section("Misread %",
+                            "Speed bought with misreadings is skimming, not reading: hold the test under 2% misread before pushing for speed. Without a microphone misreadings are not counted, so those runs show blank here, not 0.")
+                }
                 section("The learning curve",
                         "In a 1975 study, students reading up to 160 pages of upside-down text got faster as a power of pages read — a straight line on log axes — and neared normal speed inside those pages. Here your speed is fitted as a power of the minutes you have practised; the fit quality says how straight your line is.")
                 section("After a break",

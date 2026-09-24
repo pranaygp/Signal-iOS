@@ -99,7 +99,7 @@ final class ReadModel: ObservableObject {
         guard let excerpt, startedAt == nil else { return }
         let now = Date()
         startedAt = now
-        if microphone {
+        if microphone && PracticeFeatures.microphone {
             let scorer = SpeechScorer(target: excerpt.words, startedAt: now)
             self.scorer = scorer
             scorer.onChange = { [weak self] heard in self?.heard = heard }
@@ -422,7 +422,9 @@ struct ReadView: View {
                 .pickerStyle(.inline)
             }
             Divider()
-            Toggle("Score with microphone", systemImage: "mic", isOn: Binding(get: { model.microphone }, set: { model.microphone = $0; model.start() }))
+            if PracticeFeatures.microphone {
+                Toggle("Score with microphone", systemImage: "mic", isOn: Binding(get: { model.microphone }, set: { model.microphone = $0; model.start() }))
+            }
             Button("New passage", systemImage: "arrow.clockwise") { model.start() }
         } label: {
             HStack(spacing: 4) {
@@ -443,7 +445,7 @@ struct ReadView: View {
     private var passageCard: some View {
         if let excerpt = model.excerpt {
             let hidden = model.startedAt == nil
-            ReadPassageView(excerpt: excerpt, verdicts: model.isRunning && model.microphone ? liveVerdicts : nil, frontier: model.isRunning && model.microphone ? model.heard.frontier : nil, english: model.inEnglish)
+            ReadPassageView(excerpt: excerpt, verdicts: model.isRunning && model.microphone && PracticeFeatures.microphone ? liveVerdicts : nil, frontier: model.isRunning && model.microphone && PracticeFeatures.microphone ? model.heard.frontier : nil, english: model.inEnglish)
                 .blur(radius: hidden ? 7 : 0)
                 .opacity(hidden ? 0.45 : 1)
                 .contentShape(Rectangle())
@@ -524,7 +526,7 @@ struct ReadView: View {
             ? "The test: about \(ReadModel.testWords) words of one excerpt, in \(model.script.label). Take it in both scripts to compare."
             : "About \(model.words) words of one excerpt."
         return what + " Tap the passage to reveal it and start the clock; read it aloud; tap Done. Interrupted? Discard keeps nothing." +
-            (model.microphone ? " The microphone marks the words you misread." : "")
+            (model.microphone && PracticeFeatures.microphone ? " The microphone marks the words you misread." : "")
     }
 }
 
@@ -681,7 +683,9 @@ struct ReadResultsView: View {
                          ? "Words you misread are underlined; skipped ones are dotted. \(result.unheard) word\(result.unheard == 1 ? "" : "s") at the end weren't caught by the recogniser and count as read."
                          : "Words you misread are underlined; skipped ones are dotted.")
                 } else {
-                    Text("Check it against what you took in. Turn on the microphone in the options to have the words you misread marked.")
+                    Text(PracticeFeatures.microphone
+                         ? "Check it against what you took in. Turn on the microphone in the options to have the words you misread marked."
+                         : "Check it against what you took in.")
                 }
             }
 

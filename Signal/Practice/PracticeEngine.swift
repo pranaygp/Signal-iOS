@@ -426,6 +426,13 @@ enum Recall {
 
 // MARK: - Stats between sittings
 
+/// The microphone is switched off for now: the recogniser cannot tell "I"
+/// from "eye", and its scoring is not yet worth the noise it adds. The code
+/// stays behind this switch; a reading is the reader's time alone.
+enum PracticeFeatures {
+    static let microphone = false
+}
+
 /// What the trainer remembers: one row per race, and per mark how often it
 /// was met, misread, and how long it took to recognise. Namespaced by
 /// alphabet, since pooling two would average unrelated skills.
@@ -609,7 +616,9 @@ final class PracticeStore: ObservableObject {
         book.append(Session(
             date: Date(), seconds: Int(r.seconds.rounded()), mode: mode, wpm: r.wpm,
             accuracy: r.accuracy, chars: 0, misread: r.errors, words: r.words,
-            listened: r.listened, excerptID: r.excerpt.key,
+            // With the microphone switched off a reading is neither scored nor
+            // unscored; the flag stays empty so old scored runs pair with it freely.
+            listened: PracticeFeatures.microphone ? r.listened : nil, excerptID: r.excerpt.key,
         ), marks: r.words)
         save()
     }
@@ -657,7 +666,7 @@ final class PracticeStore: ObservableObject {
         let mixed: Bool
         var scored: Bool { listened == true && !mixed }
         /// Drawn as an open dot: read loosely.
-        var hollow: Bool { stale || mixed || provisional || listened != true }
+        var hollow: Bool { stale || provisional || (PracticeFeatures.microphone && (mixed || listened == false)) }
     }
     struct RatioSeries {
         let points: [RatioPoint]
