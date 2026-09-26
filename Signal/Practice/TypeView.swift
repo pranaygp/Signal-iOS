@@ -312,7 +312,12 @@ struct PassageView: View {
         for b in line.blocks {
             var run = AttributedString(b.text)
             run.font = PracticeTheme.script(active ? scriptSize : scriptSize * 0.75)
-            if b.isSpace { run.foregroundColor = Color.Signal.label; out += run; continue }
+            if b.isSpace {
+                // Spelled so a line ending on it is measured with it (`wordGap`).
+                run = AttributedString(QiulingSegmenter.wordGap)
+                run.font = PracticeTheme.script(active ? scriptSize : scriptSize * 0.75)
+                run.foregroundColor = Color.Signal.label; out += run; continue
+            }
             let typedHere = b.range.filter { $0 < typedChars.count }
             let isCurrent = active && b.range.contains(typedChars.count)
             if typedHere.count == b.range.count {

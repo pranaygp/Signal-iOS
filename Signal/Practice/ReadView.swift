@@ -533,7 +533,9 @@ struct ReadView: View {
 // MARK: - Passage
 
 /// The passage whole. In the script, each a–z word is its own run so a colour
-/// change never splits a glyph. For the English baseline it is the excerpt as
+/// change never splits a glyph, with the excerpt's punctuation around it in
+/// the system face — the font's own full stop and comma are one drawing, a
+/// stroke that reads as a mark. For the English baseline it is the excerpt as
 /// printed, capitals and punctuation and all, in the book face at a reading
 /// size: the baseline is English as it is normally read, or the ratio means
 /// nothing.
@@ -563,9 +565,18 @@ struct ReadPassageView: View {
     }
 
     private var attributed: AttributedString {
+        let words = excerpt.words
+        var tokens = excerpt.tokens
+        if tokens.map(\.word) != words { tokens = words.map { PracticePassages.Token(word: $0, gap: true) } }
+        // The word space in the script's own font — the drawn word gap, not
+        // the system face's sliver beside 40-point marks — and spelled so a
+        // line that ends on it is measured with it (`wordGap`).
+        var gap = AttributedString(QiulingSegmenter.wordGap)
+        gap.font = PracticeTheme.script(scriptSize)
         var out = AttributedString()
-        for (i, w) in excerpt.words.enumerated() {
-            var run = AttributedString(w)
+        for (i, t) in tokens.enumerated() {
+            out += punctuation(t.pre, gap: gap)
+            var run = AttributedString(t.word)
             run.font = PracticeTheme.script(scriptSize)
             run.foregroundColor = Color.Signal.label
             if let verdicts, i < verdicts.count {
@@ -578,11 +589,23 @@ struct ReadPassageView: View {
             }
             if let frontier, i == frontier { run.backgroundColor = PracticeTheme.tint }
             out += run
-            // The space in the script's own font: the drawn word gap, not the
-            // system face's, which is a sliver beside 40-point marks.
-            var gap = AttributedString(" ")
-            gap.font = PracticeTheme.script(scriptSize)
-            out += gap
+            out += punctuation(t.post, gap: gap)
+            if t.gap { out += gap }
+        }
+        return out
+    }
+
+    /// Printed punctuation in the system face at the marks' size, light to sit
+    /// with their strokes; a space inside it (` — `) is the script's.
+    private func punctuation(_ text: String, gap: AttributedString) -> AttributedString {
+        var out = AttributedString()
+        for (k, piece) in text.split(separator: " ", omittingEmptySubsequences: false).enumerated() {
+            if k > 0 { out += gap }
+            guard !piece.isEmpty else { continue }
+            var run = AttributedString(String(piece))
+            run.font = .system(size: scriptSize, weight: .light)
+            run.foregroundColor = Color.Signal.label
+            out += run
         }
         return out
     }

@@ -73,7 +73,60 @@ enum QiulingSegmenter {
         return result
     }
 
-    static func clearCache() { lock.lock(); cache.removeAll(); lock.unlock() }
+    static func clearCache() { lock.lock(); cache.removeAll(); gapCache = nil; lock.unlock() }
+
+    private static var gapCache: String?
+
+    /// The word space as the script's text views draw it: the space glyph by
+    /// its private codepoint, then a zero-width space to break the line on.
+    ///
+    /// A U+0020 at the end of a line is whitespace to CoreText, so it hangs
+    /// past the line's width instead of counting towards it — harmless in a
+    /// face whose space is blank, but Qiuling's space is a drawn mark, and
+    /// SwiftUI clips what hangs past the text's frame: the last space on a
+    /// line was cut off, whole or in part. The same glyph under its private
+    /// codepoint is not whitespace, so a line that ends on it is measured
+    /// with it; the U+200B after it is where the line may break (the public
+    /// site wraps its samples the same way). Same glyph, so the space's form
+    /// and its kern still come out as the font chooses them. The codepoint is
+    /// read off the font, which maps it to the same glyph as U+0020, so a
+    /// font downloaded later is asked again (`clearCache`).
+    static var wordGap: String {
+        lock.lock(); if let hit = gapCache { lock.unlock(); return hit }; lock.unlock()
+        let gap = findWordGap() ?? " "
+        lock.lock(); gapCache = gap; lock.unlock()
+        return gap
+    }
+
+    /// `text` with each U+0020 drawn as `wordGap`.
+    static func gapped(_ text: String) -> String {
+        let gap = wordGap
+        return gap == " " ? text : text.replacingOccurrences(of: " ", with: gap)
+    }
+
+    private static func findWordGap() -> String? {
+        guard let font = UIFont(name: QiulingFonts.family, size: 32) else { return nil }
+        let ct = font as CTFont
+        var space: CGGlyph = 0
+        var sp: UniChar = 0x20
+        guard CTFontGetGlyphsForCharacters(ct, &sp, &space, 1), space != 0 else { return nil }
+        // The build files every private codepoint in plane 15.
+        let lo: UInt32 = 0xF0000, hi: UInt32 = 0xFFFFD
+        var units = [UniChar]()
+        units.reserveCapacity(Int(hi - lo + 1) * 2)
+        for cp in lo...hi {
+            let v = cp - 0x10000
+            units.append(UniChar(0xD800 + (v >> 10)))
+            units.append(UniChar(0xDC00 + (v & 0x3FF)))
+        }
+        var glyphs = [CGGlyph](repeating: 0, count: units.count)
+        _ = CTFontGetGlyphsForCharacters(ct, units, &glyphs, units.count)
+        for i in stride(from: 0, to: units.count, by: 2) where glyphs[i] == space {
+            guard let scalar = Unicode.Scalar(lo + UInt32(i / 2)) else { continue }
+            return String(scalar) + "\u{200B}"
+        }
+        return nil
+    }
 
     /// Everything the font can draw, as a–z and single spaces.
     static func normalise(_ text: String) -> String {

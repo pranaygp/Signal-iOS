@@ -65,7 +65,7 @@ struct WriteView: View {
         if renderFailed {
             Text("The script isn't available right now.").font(.subheadline).foregroundStyle(.secondary)
         } else if hasMessage {
-            Text(draft).font(PracticeTheme.script(previewSize)).lineSpacing(8).foregroundStyle(Color.Signal.label)
+            Text(QiulingSegmenter.gapped(draft)).font(PracticeTheme.script(previewSize)).lineSpacing(8).foregroundStyle(Color.Signal.label)
         } else {
             Text("Your message appears here in Qiuling.").font(.subheadline).foregroundStyle(.secondary)
         }
@@ -119,7 +119,7 @@ struct WriteView: View {
     private func render() -> UIImage? {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { renderFailed = false; return nil }
-        let view = Text(text)
+        let view = Text(QiulingSegmenter.gapped(text))
             .font(PracticeTheme.script(56)).lineSpacing(10)
             .foregroundStyle(Color.Signal.label)
             .padding(40)

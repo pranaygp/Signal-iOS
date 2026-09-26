@@ -33,6 +33,8 @@ final class PracticePassages {
         /// the same excerpt can be found again.
         var key: String? = nil
         var words: [String] { sentences.flatMap(PracticePassages.words) }
+        /// The words with their printed punctuation, for drawing (`tokens(_:)`).
+        var tokens: [Token] { PracticePassages.tokens(sentences.joined(separator: " ")) }
         var url: URL { URL(string: "https://www.gutenberg.org/ebooks/\(book)")! }
         var citation: String { author.isEmpty ? title : "\(author), \(title)" }
     }
@@ -45,6 +47,69 @@ final class PracticePassages {
     /// The a–z words of one printed sentence, by the corpus's own rule.
     static func words(_ raw: String) -> [String] {
         QiulingSegmenter.normalise(raw).split(separator: " ").map(String.init).filter { !$0.isEmpty }
+    }
+
+    /// One word of a passage as it is drawn: the a–z word and the printed
+    /// punctuation around it.
+    struct Token: Equatable {
+        var pre = ""
+        var word: String
+        var post = ""
+        /// Whether a word space follows.
+        var gap = false
+    }
+
+    /// A passage keeps its punctuation: the marks carry the words, but the
+    /// quotes, commas and full stops carry the sentence, and without them a
+    /// passage is sixty words in a row. Each a–z word of `words(text)`, in
+    /// order, with the printed text around it — `pre` (an opening quote),
+    /// `post` (the comma or `!”` after it) and whether a word space follows.
+    /// The words are exactly `words(text)`, so anything counted or scored by
+    /// word index is unchanged. An apostrophe inside a word goes, as it does
+    /// in `normalise` (the font shapes the word whole), and so do Gutenberg's
+    /// `_` italics markers. Between two words, punctuation up to the first
+    /// space stays with the word before and punctuation after the last space
+    /// goes with the word after, so a line never ends on an opening quote or
+    /// starts on a comma. The web trainer's `readingTokens` is the twin.
+    static func tokens(_ text: String) -> [Token] {
+        let s = Array(text.lowercased().replacingOccurrences(of: "_", with: "").unicodeScalars)
+        func isLetter(_ c: Unicode.Scalar) -> Bool { c.value >= 0x61 && c.value <= 0x7A }
+        func isApostrophe(_ c: Unicode.Scalar) -> Bool { c == "\u{2019}" || c == "\u{2018}" || c == "'" }
+        func str(_ r: ArraySlice<Unicode.Scalar>) -> String { var v = String.UnicodeScalarView(); v.append(contentsOf: r); return String(v) }
+        func tidy(_ t: String) -> String {
+            t.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        }
+        var out = [Token]()
+        var at = 0, i = 0
+        while i < s.count {
+            guard isLetter(s[i]) || isApostrophe(s[i]) else { i += 1; continue }
+            var j = i
+            while j < s.count, isLetter(s[j]) || isApostrophe(s[j]) { j += 1 }
+            let run = s[i..<j]
+            guard run.contains(where: isLetter) else { i = j; continue }
+            let first = run.firstIndex(where: isLetter)!, last = run.lastIndex(where: isLetter)!
+            var tok = Token(pre: str(run[i..<first]), word: str(run[first...last].filter(isLetter)[...]), post: str(run[(last + 1)..<j]))
+            let between = s[at..<i]
+            if out.isEmpty {
+                tok.pre = tidy(str(between)) + tok.pre
+            } else if !between.contains(where: { $0.properties.isWhitespace }) {
+                out[out.count - 1].post += str(between)
+            } else {
+                let head = between.prefix(while: { !$0.properties.isWhitespace })
+                let tail = between.reversed().prefix(while: { !$0.properties.isWhitespace }).reversed()
+                let mid = tidy(str(between.dropFirst(head.count).dropLast(tail.count)))
+                out[out.count - 1].post += str(head) + (mid.isEmpty ? "" : " " + mid)
+                out[out.count - 1].gap = true
+                tok.pre = str(ArraySlice(tail)) + tok.pre
+            }
+            out.append(tok)
+            at = j; i = j
+        }
+        if !out.isEmpty {
+            out[out.count - 1].post += tidy(str(s[at...]))
+            out[out.count - 1].gap = true
+        }
+        return out
     }
 
     func loadIfNeeded() async {
